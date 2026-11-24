@@ -261,26 +261,36 @@ function majPlan_(force) {
   if (v) { try { stocke = JSON.parse(v); } catch (e) {} }
 
   // Recherche de la version la plus récente « Plan_VPD_vNN »
-  var meilleur = null;
+  // Candidats : « Plan_VPD_vNN.xlsx » ou Google Sheet du même nom ; on écarte les
+  // fichiers de verrouillage d'Excel (« ~$Plan_VPD_v55.xlsx ») et les fichiers minuscules.
+  var cands = [];
   var it = DriveApp.searchFiles("title contains 'Plan_VPD_v' and trashed = false");
   while (it.hasNext()) {
     var f = it.next();
-    var m = f.getName().match(/Plan_VPD_v(\d+)/i);
+    var m = f.getName().match(/^Plan_VPD_v(\d+)(\.xlsx)?$/i);
     if (!m) continue;
-    var n = +m[1];
-    if (!meilleur || n > meilleur.n || (n === meilleur.n && f.getLastUpdated() > meilleur.f.getLastUpdated())) meilleur = { n: n, f: f };
+    var gs = f.getMimeType() === MimeType.GOOGLE_SHEETS;
+    if (!gs && (!/\.xlsx$/i.test(f.getName()) || f.getSize() < 5000)) continue;
+    cands.push({ n: +m[1], f: f, t: f.getLastUpdated().getTime() });
   }
-  if (!meilleur) { if (stocke) { c.put('plan', JSON.stringify(stocke), 3600); return stocke; } throw new Error('Aucun fichier Plan_VPD_vNN trouvé dans Drive.'); }
+  cands.sort(function (a, b) { return b.n - a.n || b.t - a.t; });
+  if (!cands.length) { if (stocke) { c.put('plan', JSON.stringify(stocke), 3600); return stocke; } throw new Error('Aucun fichier Plan_VPD_vNN trouvé dans Drive.'); }
+  var meilleur = cands[0];
   var modif = meilleur.f.getLastUpdated().toISOString();
   if (stocke && stocke.fileId === meilleur.f.getId() && stocke.modifie === modif && !force) {
     c.put('plan', JSON.stringify(stocke), 3600); return stocke;
   }
-  var plan;
-  try { plan = lirePlanFichier_(meilleur.f); }
-  catch (e) {
-    if (stocke) { stocke.avertissement = 'Lecture de ' + meilleur.f.getName() + ' impossible (' + e.message + ') ; version en cache utilisée.'; return stocke; }
-    throw e;
+  var plan = null, erreurs = [];
+  for (var ci = 0; ci < cands.length && !plan; ci++) {
+    try { plan = lirePlanFichier_(cands[ci].f); meilleur = cands[ci]; modif = meilleur.f.getLastUpdated().toISOString(); }
+    catch (e) { erreurs.push(cands[ci].f.getName() + ' : ' + e.message); }
+    if (!plan && stocke && stocke.fileId === cands[ci].f.getId()) break;
   }
+  if (!plan) {
+    if (stocke) { stocke.avertissement = 'Lecture du plan impossible (' + erreurs.join(' ; ') + ') ; version en cache utilisée.'; return stocke; }
+    throw new Error('Lecture du plan impossible : ' + erreurs.join(' ; '));
+  }
+  if (meilleur !== cands[0]) plan.avertissement = 'Version la plus récente illisible (' + erreurs.join(' ; ') + ') ; ' + meilleur.f.getName() + ' utilisée.';
   plan.version = 'v' + meilleur.n;
   plan.nom = meilleur.f.getName();
   plan.fileId = meilleur.f.getId();
@@ -303,7 +313,7 @@ function lirePlanFichier_(file) {
       payload: JSON.stringify({ name: 'tmp_climat_' + file.getName(), mimeType: 'application/vnd.google-apps.spreadsheet' }),
       headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
     });
-    if (r.getResponseCode() !== 200) throw new Error('conversion refusée (' + r.getResponseCode() + ')');
+    if (r.getResponseCode() !== 200) throw new Error('conversion refusée (' + r.getResponseCode() + ') ' + r.getContentText().slice(0, 160));
     tmpId = JSON.parse(r.getContentText()).id;
     book = SpreadsheetApp.openById(tmpId);
   }
