@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Climat</title>
+<meta name="theme-color" content="#f3f4f6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Climat">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icone-180.png">
+<link rel="icon" type="image/png" href="icone-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  /* Thème « Ardoise » (identique à Propagation) */
+  :root {
+    --bg:#f3f4f6; --card:#fff; --ink:#151b24; --mute:#687280; --line:#e2e5ea;
+    --acc:#2b3a4f; --acc2:#e7ebf1; --leaf:#1f8a70; --leaf2:#e0f2ec; --warn:#d64545; --warn2:#fbeaea;
+    --amb:#b7791f; --amb2:#fbf3e4;
+    --grad:linear-gradient(135deg,#2b3a4f,#24303f); --sur-acc:#fff; --off:#eceef2; --eteint:#c4c9d1;
+    --ombre:0 1px 3px rgba(21,27,36,.06);
+  }
+  html.nuit {
+    --bg:#101318; --card:#181c23; --ink:#e6e9ee; --mute:#9aa3b0; --line:#272d37;
+    --acc:#5f7696; --acc2:rgba(120,145,180,.16); --leaf:#3fbf98; --leaf2:rgba(63,191,152,.14); --warn:#ff7b7b; --warn2:rgba(255,123,123,.15);
+    --amb:#e3b25a; --amb2:rgba(227,178,90,.15);
+    --grad:linear-gradient(135deg,#4a5d78,#3a4a60); --off:#222833; --eteint:#3a414d; --ombre:none; color-scheme:dark;
+  }
+  html.nuit .card, html.nuit .login-box, html.nuit .sheet { border:1px solid var(--line); }
+  html.nuit #toast { background:#e6e9ee; color:#101318; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .hidden { display:none !important; }
+  button, input, select, textarea { font:inherit; color:inherit; }
+  button { cursor:pointer; }
+  #login { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .login-box { background:var(--card); border-radius:18px; padding:24px; width:100%; max-width:360px; box-shadow:var(--ombre); }
+  .login-box img { width:56px; height:56px; border-radius:13px; display:block; margin-bottom:12px; }
+  .login-box h1 { font-size:20px; margin:0 0 4px; } .login-box p { margin:0 0 16px; color:var(--mute); }
+  header { position:sticky; top:0; z-index:5; background:var(--bg); padding:calc(env(safe-area-inset-top) + 10px) 16px 6px; }
+  .top { display:flex; align-items:center; gap:8px; }
+  .top h1 { font-size:18px; margin:0; flex:1; } .top h1 small { font-weight:400; color:var(--mute); font-size:13px; }
+  .icon-btn { border:0; background:transparent; font-size:18px; padding:6px 8px; border-radius:8px; }
+  .chips { display:flex; gap:6px; overflow-x:auto; padding:8px 0 4px; scrollbar-width:none; }
+  .chips::-webkit-scrollbar { display:none; }
+  .chip { flex:0 0 auto; border:1px solid var(--line); background:var(--card); border-radius:999px; padding:5px 12px; font-size:14px; }
+  .chip.on { background:var(--grad); border-color:transparent; color:var(--sur-acc); }
+  main { padding:4px 16px calc(env(safe-area-inset-bottom) + 90px); max-width:720px; margin:0 auto; }
+  h2 { font-size:16px; margin:18px 0 8px; } h2 small { color:var(--mute); font-weight:400; }
+  .card { background:var(--card); border-radius:16px; display:flex; overflow:hidden; margin-bottom:10px; box-shadow:var(--ombre); }
+  .card .bar { width:5px; flex:0 0 5px; background:var(--leaf); }
+  .card.alerte .bar { background:var(--warn); } .card.amb .bar { background:var(--amb); } .card.vide .bar { background:var(--eteint); }
+  .card .body { padding:11px 12px; flex:1; min-width:0; }
+  .ttl { font-weight:700; font-size:16px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .meta { font-size:12px; color:var(--mute); margin-top:2px; }
+  .tag { display:inline-block; font-size:12px; font-weight:600; border-radius:999px; padding:1px 8px; }
+  .tag.ok { background:var(--leaf2); color:var(--leaf); } .tag.warn { background:var(--warn2); color:var(--warn); }
+  .tag.amb { background:var(--amb2); color:var(--amb); } .tag.off { background:var(--off); color:var(--mute); } .tag.acc { background:var(--acc2); color:var(--acc); }
+  .grille { display:grid; grid-template-columns:auto 1fr 1fr; gap:2px 10px; margin-top:8px; font-size:14px; align-items:baseline; }
+  .grille .h { font-size:11px; color:var(--mute); text-transform:uppercase; letter-spacing:.03em; }
+  .grille .l { color:var(--mute); font-size:13px; }
+  .grille b { font-variant-numeric:tabular-nums; }
+  .ligne { display:flex; gap:12px; flex-wrap:wrap; font-size:13px; color:var(--mute); margin-top:6px; }
+  .ligne b { color:var(--ink); font-weight:600; }
+  .msg { border-radius:10px; padding:7px 10px; font-size:13px; margin-top:8px; }
+  .msg.warn { background:var(--warn2); color:var(--warn); } .msg.amb { background:var(--amb2); color:var(--amb); } .msg.ok { background:var(--leaf2); color:var(--leaf); } .msg.acc { background:var(--acc2); color:var(--acc); }
+  .acts { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
+  .btn { border:1px solid var(--line); background:var(--card); border-radius:9px; padding:7px 11px; font-size:14px; }
+  .btn.pri { background:var(--grad); border-color:transparent; color:var(--sur-acc); }
+  .btn.ok { background:var(--leaf2); border-color:var(--leaf2); color:var(--leaf); font-weight:600; }
+  .btn.dan { color:var(--warn); } .btn.full { width:100%; padding:12px; font-size:16px; }
+  .empty { color:var(--mute); padding:8px 0; font-size:14px; }
+  table.cmp { width:100%; border-collapse:collapse; font-size:12.5px; font-variant-numeric:tabular-nums; }
+  table.cmp th { text-align:left; font-weight:600; color:var(--mute); font-size:11px; padding:4px 3px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--card); }
+  table.cmp td { padding:5px 3px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .tw { background:var(--card); border-radius:14px; padding:6px 8px; box-shadow:var(--ombre); overflow-x:auto; }
+  .d-conforme { color:var(--leaf); } .d-mauvais-reglage { color:var(--warn); } .d-ne-suit-pas { color:var(--amb); } .d-non-inscrit, .d-sans-mesure { color:var(--mute); }
+  .bilan { display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 8px; }
+  /* Feuille de saisie */
+  .voile { position:fixed; inset:0; background:rgba(10,14,20,.45); z-index:20; display:flex; align-items:flex-end; justify-content:center; }
+  .sheet { background:var(--card); width:100%; max-width:560px; border-radius:18px 18px 0 0; padding:16px 16px calc(env(safe-area-inset-bottom) + 16px); max-height:92vh; overflow-y:auto; }
+  .sheet h3 { margin:0 0 4px; font-size:17px; } .sheet .sous { color:var(--mute); font-size:13px; margin-bottom:10px; }
+  label.f { display:block; font-size:12px; color:var(--mute); margin:8px 0 3px; }
+  input.in, select.in, textarea.in { width:100%; padding:10px 11px; border:1px solid var(--line); border-radius:10px; background:var(--bg); font-size:16px; }
+  textarea.in { min-height:64px; }
+  .duo { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; } .trio { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .duo > div, .trio > div { min-width:0; }
+  .pas { display:flex; align-items:stretch; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--bg); }
+  .pas button { border:0; background:transparent; width:40px; font-size:20px; color:var(--acc); }
+  .pas input { flex:1; width:100%; min-width:0; border:0; background:transparent; text-align:center; font-size:18px; font-weight:600; padding:9px 0; font-variant-numeric:tabular-nums; }
+  .pas.ecart { border-color:var(--warn); } .att { font-size:11px; color:var(--mute); margin-top:2px; text-align:center; }
+  .case { display:flex; gap:8px; align-items:center; margin:12px 0 4px; font-size:14px; }
+  .case input { width:20px; height:20px; }
+  nav.bas { position:fixed; bottom:0; left:0; right:0; z-index:6; background:var(--card); border-top:1px solid var(--line); display:flex; justify-content:space-around; padding:6px 0 calc(env(safe-area-inset-bottom) + 6px); }
+  nav.bas button { border:0; background:transparent; font-size:11px; color:var(--mute); display:flex; flex-direction:column; align-items:center; gap:1px; padding:2px 10px; }
+  nav.bas button span { font-size:19px; } nav.bas button.on { color:var(--acc); font-weight:600; }
+  #toast { position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 76px); transform:translateX(-50%) translateY(20px); opacity:0; background:#151b24; color:#fff; padding:9px 14px; border-radius:10px; font-size:14px; transition:.25s; z-index:40; max-width:90vw; pointer-events:none; }
+  #toast.show { opacity:1; transform:translateX(-50%); }
+  #busy { position:fixed; top:0; left:0; height:2px; width:0; background:var(--leaf); transition:width .4s; z-index:50; }
+  .file { font-size:12px; color:var(--amb); margin-top:6px; }
+  a { color:var(--acc); }
+  .evt { display:flex; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); font-size:13.5px; align-items:baseline; }
+  .evt:last-child { border:0; } .evt .dt { width:84px; flex:0 0 84px; color:var(--mute); } .evt .q { flex:1; }
+</style>
+</head>
+<body>
+<div id="busy"></div>
+
+<section id="login" class="hidden">
+  <div class="login-box">
+    <img src="icone-192.png" alt="">
+    <h1>Climat — Amaltis</h1>
+    <p>Consignes cibles, réglages de l'automate et suivi par salle.</p>
+    <div id="apiBloc"><label class="f">Adresse du script (se termine par /exec)</label>
+    <input class="in" id="apiUrl" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec"></div>
+    <label class="f">Code d'accès</label>
+    <input class="in" id="code" type="password" inputmode="numeric" autocomplete="current-password">
+    <div style="height:12px"></div>
+    <button class="btn pri full" id="go">Entrer</button>
+  </div>
+</section>
+
+<section id="app" class="hidden">
+  <header>
+    <div class="top">
+      <h1 id="titre">Climat <small id="sousTitre"></small></h1>
+      <button class="icon-btn" id="maj" title="Actualiser (relit les registres)">⟳</button>
+      <button class="icon-btn" id="theme" title="Mode nuit">🌓</button>
+    </div>
+    <div class="chips" id="chipsSalles"></div>
+  </header>
+  <main id="vue"></main>
+  <nav class="bas">
+    <button data-v="jour" class="on"><span>☀︎</span>Aujourd'hui</button>
+    <button data-v="salle"><span>▤</span>Salle</button>
+    <button data-v="releves"><span>✎</span>Relevés</button>
+    <button data-v="plus"><span>⋯</span>Plus</button>
+  </nav>
+</section>
+<div id="toast"></div>
+
+<script>
+/* ====== Configuration : adresse du déploiement Apps Script (…/exec) ====== */
+const API_DEFAUT = 'COLLER_ICI_L_ADRESSE_EXEC';   // facultatif : sinon l'adresse est demandée une fois à la connexion
+let API_URL = /^https:\/\//.test(API_DEFAUT) ? API_DEFAUT : (load('clim_api') || API_DEFAUT);
+
+const SALLES = ['Salle 2', 'Salle 3', 'Salle 4', 'Salle 5', 'Salle 6', 'Salle 7'];
+const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+const JOURS = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+const S = { code: null, acc: null, salle: null, det: {}, vue: 'jour', onglet: 'cible', file: [] };
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function store(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2800); }
+let busyN = 0;
+function busy(on) { busyN = Math.max(0, busyN + (on ? 1 : -1)); $('busy').style.width = busyN ? '70%' : '0'; }
+const n1 = v => v == null || v === '' ? '—' : (Math.round(+v * 10) / 10).toString().replace('.', ',');
+const n2 = v => v == null || v === '' ? '—' : (+v).toFixed(2).replace('.', ',');
+const toD = s => { const p = s.split('-').map(Number); return new Date(Date.UTC(p[0], p[1] - 1, p[2])); };
+const fD = s => { if (!s || !/^\d{4}-\d{2}-\d{2}/.test(s)) return s || ''; const d = toD(s.slice(0, 10)); return JOURS[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MOIS[d.getUTCMonth()]; };
+const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const hNow = () => { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+const num = v => { if (v == null || v === '') return null; const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : null; };
+
+/* ---------- Appels au serveur ---------- */
+function api(action, p, silencieux) {
+  if (/^COLLER_ICI/.test(API_URL)) return Promise.reject(new Error("L'adresse du script n'est pas encore configurée."));
+  if (!silencieux) busy(true);
+  const envoi = () => fetch(API_URL, { method: 'POST', body: JSON.stringify({ action, code: S.code, p: p || {} }), redirect: 'follow' })
+    .then(r => { if (!r.ok) throw new Error('Erreur réseau (' + r.status + ')'); return r.json(); });
+  return envoi().catch(e => new Promise(ok => setTimeout(ok, 1500)).then(envoi))
+    .then(j => { if (!silencieux) busy(false); if (!j.ok) { const e = new Error(j.erreur || 'Erreur'); e.auth = j.auth === false; e.serveur = true; throw e; } return j; },
+          e => { if (!silencieux) busy(false); throw e; });
+}
+
+/* File d'attente : une saisie faite sans réseau est gardée sur le téléphone et renvoyée. */
+function enFile(action, p) { S.file.push({ id: Date.now() + Math.random(), action, p }); store('clim_file', S.file); majFile(); }
+function majFile() { const el = $('fileInfo'); if (el) el.textContent = S.file.length ? S.file.length + ' saisie(s) en attente d\'envoi' : ''; }
+let vidage = false;
+async function viderFile() {
+  if (vidage || !S.file.length) return; vidage = true;
+  try {
+    while (S.file.length) {
+      const it = S.file[0];
+      try { await api(it.action, it.p, true); S.file.shift(); store('clim_file', S.file); }
+      catch (e) { if (e.serveur) { toast('Saisie refusée : ' + e.message); S.file.shift(); store('clim_file', S.file); } else break; }
+    }
+  } finally { vidage = false; majFile(); }
+}
+async function envoyer(action, p, ok) {
+  try { const r = await api(action, p); ok && ok(r); return r; }
+  catch (e) {
+    if (e.serveur) { toast(e.message); throw e; }
+    enFile(action, p); toast('Pas de réseau : saisie gardée, envoi automatique au retour du réseau.'); return null;
+  }
+}
+setInterval(viderFile, 30000); window.addEventListener('online', viderFile);
+
+/* ---------- Connexion ---------- */
+async function connexion(code) {
+  S.code = code;
+  try { await api('ping'); store('clim_code', code); $('login').classList.add('hidden'); $('app').classList.remove('hidden'); await charger(); viderFile(); }
+  catch (e) { S.code = null; store('clim_code', null); $('login').classList.remove('hidden'); $('app').classList.add('hidden'); if (code) toast(e.auth ? 'Code invalide.' : e.message); }
+}
+$('go').onclick = () => {
+  const u = $('apiUrl').value.trim();
+  if (u) { if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(u)) return toast('Adresse invalide : elle doit se terminer par /exec.'); API_URL = u; store('clim_api', u); }
+  connexion($('code').value.trim());
+};
+if (/^https:\/\//.test(API_URL)) $('apiBloc').classList.add('hidden');
+$('code').onkeydown = e => { if (e.key === 'Enter') $('go').click(); };
+
+async function charger(force) {
+  const r = await api('accueil', { force: !!force });
+  S.acc = r; store('clim_acc', r);
+  if (force) S.det = {};
+  rendre();
+}
+$('maj').onclick = () => charger(true).then(() => { if (S.vue === 'salle' && S.salle) ouvrirSalle(S.salle, true); toast('Registres relus.'); }).catch(e => toast(e.message));
+
+/* ---------- Navigation ---------- */
+document.querySelectorAll('nav.bas button').forEach(b => b.onclick = () => { S.vue = b.dataset.v; if (S.vue === 'salle' && !S.salle) S.salle = 'Salle 3'; rendre(); if (S.vue === 'salle') ouvrirSalle(S.salle); window.scrollTo(0, 0); });
+function chipsSalles() {
+  const c = $('chipsSalles');
+  if (S.vue !== 'salle') { c.innerHTML = ''; c.classList.add('hidden'); return; }
+  c.classList.remove('hidden');
+  c.innerHTML = SALLES.map(s => `<button class="chip ${s === S.salle ? 'on' : ''}" data-s="${s}">${s.replace('Salle ', 'S')}</button>`).join('');
+  c.querySelectorAll('button').forEach(b => b.onclick = () => { S.salle = b.dataset.s; chipsSalles(); ouvrirSalle(S.salle); });
+}
+function rendre() {
+  document.querySelectorAll('nav.bas button').forEach(b => b.classList.toggle('on', b.dataset.v === S.vue));
+  chipsSalles();
+  $('sousTitre').textContent = S.acc ? fD(S.acc.aujourdhui) + ' · plan ' + (S.acc.plan.version || '?') : '';
+  if (S.vue === 'jour') vueJour();
+  else if (S.vue === 'salle') vueSalle();
+  else if (S.vue === 'releves') vueReleves();
+  else vuePlus();
+}
+
+/* ---------- Blocs communs ---------- */
+function situationTxt(s) {
+  const si = s.situation || {};
+  if (si.vide) return si.motif || 'Salle vide';
+  if (si.continu) return 'Plants mères · végétation continue · Veg 1';
+  const ph = si.phase === 'FLO' ? 'FLO J' + si.jourPhase : 'VEG J' + si.jourPhase;
+  return 'Round ' + esc(si.round) + ' · ' + ph + ' · <b>' + esc(si.semaine) + '</b>';
+}
+function blocCible(s) {
+  const c = s.cible, a = s.attendu, r = s.dernierReglage && s.dernierReglage.val;
+  if (!c) return '';
+  const cell = (cv, av, rv, u) => `<b>${n1(cv)}${u}</b>${av != null && av !== cv ? ` <span class="meta">→ ${n1(av)}</span>` : ''}`;
+  return `<div class="grille">
+    <span></span><span class="h">Jour</span><span class="h">Nuit</span>
+    <span class="l">T air</span><span>${cell(c.tj, a.tj, r && r.tj, ' °C')}</span><span>${cell(c.tn, a.tn, r && r.tn, ' °C')}</span>
+    <span class="l">HR</span><span><b>${n1(c.hrj)} %</b></span><span><b>${n1(c.hrn)} %</b> <span class="meta">max ${n1(c.hrnMax)}</span></span>
+    </div>
+    <div class="ligne"><span>VPD <b>${n2(c.vpd)}</b> kPa <span>(${n2(c.vpdMin)}–${n2(c.vpdMax)})</span></span><span>DIF <b>${n1(c.dif)}</b> °C</span><span>CO₂ <b>${n1(c.co2)}</b> ppm</span><span>Rampe <b>${n1(c.rampe)}</b> h</span></div>
+    <div class="ligne"><span>Au thermostat : jour <b>${n1(a.tj)} °C</b> · nuit <b>${n1(a.tn)} °C</b></span><span>Source : ${esc(c.source)}</span></div>
+    ${c.divergences && c.divergences.length ? `<div class="msg amb">Le tableau du registre diffère du plan ${esc(S.acc && S.acc.plan.version)} : ${esc(c.divergences.join(' · '))}</div>` : ''}`;
+}
+function blocReglage(s) {
+  const d = s.dernierReglage;
+  if (!d) return s.cible ? '<div class="msg amb">Aucun réglage inscrit pour cette salle.</div>' : '';
+  const v = d.val;
+  const etat = s.etatReglage === 'conforme' ? '<span class="tag ok">conforme à la cible du jour</span>' : '<span class="tag warn">écart avec la cible du jour</span>';
+  return `<div class="ligne"><span>Réglé le <b>${fD(d.date)}</b> ${esc(d.heure || '')} (${esc(d.semaine)}) : T ${n1(v.tj)}/${n1(v.tn)} °C · HR ${n1(v.hrj)}/${n1(v.hrn)} % · CO₂ ${n1(v.co2)}</span></div>
+    <div style="margin-top:4px">${s.cible ? etat : ''}</div>
+    ${s.ecartsReglage && s.ecartsReglage.length ? `<div class="msg warn">${esc(s.ecartsReglage.join(' · '))}</div>` : ''}`;
+}
+function blocRappel(s) {
+  let h = '';
+  if (s.rappel) {
+    const e = s.rappel, mods = (e.modifs || []).map(m => m.champ + ' ' + n1(m.de) + ' → ' + n1(m.a)).join(' · ');
+    h += `<div class="msg warn"><b>${e.retard > 0 ? 'Changement non confirmé depuis ' + e.retard + ' j' : 'Changement de consigne aujourd\'hui'}</b> — passage à ${esc(e.semaine)} (${fD(e.conseillee)}${e.conseillee !== e.date ? ', prévu ' + fD(e.date) + ' en fin de semaine' : ''})${mods ? '<br>' + esc(mods) : ''}</div>`;
+  } else if (s.prochain) {
+    const e = s.prochain, mods = (e.modifs || []).map(m => m.champ + ' ' + n1(m.de) + ' → ' + n1(m.a)).join(' · ');
+    h += `<div class="msg acc">Prochain changement : ${esc(e.semaine)} le ${fD(e.conseillee)}${mods ? ' — ' + esc(mods) : ''}</div>`;
+  }
+  (s.ecartsCalendrier || []).forEach(x => {
+    h += `<div class="msg amb">Calendrier : « ${esc(x.titre)} » prévue le ${fD(x.calendrier)} ; selon l'arrimage du plan : ${fD(x.plan)} (${x.ecart > 0 ? x.ecart + ' j plus tard' : -x.ecart + ' j plus tôt'}).</div>`;
+  });
+  return h;
+}
+function classeCarte(s) {
+  if (s.situation && s.situation.vide) return 'vide';
+  if (s.rappel || s.etatReglage === 'ecart') return 'alerte';
+  if (s.etatReglage === 'aucun' || (s.ecartsCalendrier && s.ecartsCalendrier.length)) return 'amb';
+  return '';
+}
+
+/* ---------- Vue « Aujourd'hui » ---------- */
+function vueJour() {
+  const a = S.acc;
+  if (!a) { $('vue').innerHTML = '<div class="empty">Chargement…</div>'; return; }
+  let h = '';
+  if (a.plan.avertissement) h += `<div class="msg amb">${esc(a.plan.avertissement)}</div>`;
+  const aFaire = a.salles.filter(s => s.rappel).length;
+  h += `<h2>Aujourd'hui <small>${aFaire ? aFaire + ' salle(s) à régler' : 'aucun changement en attente'}</small></h2><div id="fileInfo" class="file"></div>`;
+  a.salles.forEach(s => {
+    const tag = s.rappel ? '<span class="tag warn">à régler</span>' : s.aujourdhuiChangement ? '<span class="tag acc">changement aujourd\'hui</span>' : '';
+    h += `<div class="card ${classeCarte(s)}"><div class="bar"></div><div class="body">
+      <div class="ttl">${esc(s.salle)} ${tag}</div>
+      <div class="meta">${situationTxt(s)}${s.erreur ? ' · <span style="color:var(--warn)">registre illisible : ' + esc(s.erreur) + '</span>' : ''}</div>
+      ${blocCible(s)}${blocRappel(s)}${blocReglage(s)}
+      <div class="acts">
+        ${s.cible ? `<button class="btn pri" data-saisir="${s.salle}">Saisir le réglage</button>` : ''}
+        <button class="btn" data-voir="${s.salle}">Détails</button>
+        ${s.rappel ? `<button class="btn" data-ignorer="${s.salle}">Ignorer ce rappel</button>` : ''}
+      </div></div></div>`;
+  });
+  $('vue').innerHTML = h; majFile();
+  $('vue').querySelectorAll('[data-saisir]').forEach(b => b.onclick = () => formReglage(b.dataset.saisir));
+  $('vue').querySelectorAll('[data-voir]').forEach(b => b.onclick = () => { S.salle = b.dataset.voir; S.vue = 'salle'; rendre(); ouvrirSalle(S.salle); window.scrollTo(0, 0); });
+  $('vue').querySelectorAll('[data-ignorer]').forEach(b => b.onclick = () => ignorerRappel(b.dataset.ignorer));
+}
+function resume(salle) { return S.acc && S.acc.salles.find(x => x.salle === salle); }
+
+async function ignorerRappel(salle) {
+  const s = resume(salle); if (!s || !s.rappel) return;
+  const note = prompt('Motif (ex. consigne volontairement maintenue) :', '');
+  if (note === null) return;
+  await envoyer('rappel', { salle, round: s.situation.round, semaine: s.rappel.semaine, date: s.rappel.conseillee, action: 'ignoré', note });
+  await charger();
+}
+
+/* ---------- Saisie d'un réglage ---------- */
+function feuille(html) {
+  const v = document.createElement('div'); v.className = 'voile';
+  v.innerHTML = `<div class="sheet">${html}</div>`;
+  v.onclick = e => { if (e.target === v) v.remove(); };
+  document.body.appendChild(v); return v;
+}
+function pas(id, val, step, att) {
+  return `<div class="pas" id="w_${id}"><button type="button" data-m="${id}" data-st="${-step}">−</button><input id="${id}" inputmode="decimal" value="${val == null ? '' : String(val).replace('.', ',')}"><button type="button" data-m="${id}" data-st="${step}">+</button></div>${att != null ? `<div class="att">attendu ${n1(att)}</div>` : ''}`;
+}
+function formReglage(salle) {
+  const s = resume(salle); if (!s) return;
+  const a = s.attendu || {}, d = s.dernierReglage && s.dernierReglage.val;
+  const taches = (s.tachesCalendrier || []);
+  const v = feuille(`<h3>Réglage entré dans l'automate — ${esc(salle)}</h3>
+    <div class="sous">${situationTxt(s)} · valeurs proposées = consigne attendue au thermostat</div>
+    <div class="duo"><div><label class="f">Date</label><input class="in" id="r_date" type="date" value="${today()}"></div><div><label class="f">Heure</label><input class="in" id="r_heure" type="time" value="${hNow()}"></div></div>
+    <div class="duo"><div><label class="f">T jour (°C)</label>${pas('r_tj', a.tj, 0.5, a.tj)}</div><div><label class="f">T nuit (°C)</label>${pas('r_tn', a.tn, 0.5, a.tn)}</div></div>
+    <div class="duo"><div><label class="f">HR jour (%)</label>${pas('r_hrj', a.hrj, 1, a.hrj)}</div><div><label class="f">HR nuit (%)</label>${pas('r_hrn', a.hrn, 1, a.hrn)}</div></div>
+    <div class="duo"><div><label class="f">CO₂ (ppm)</label>${pas('r_co2', a.co2, 50, a.co2)}</div><div><label class="f">Rampe (h)</label>${pas('r_rampe', a.rampe, 0.5, a.rampe)}</div></div>
+    <div id="r_verif"></div>
+    ${taches.length ? `<label class="case"><input type="checkbox" id="r_cal" checked> Cocher « ${esc(taches[0].titre)} » au calendrier${taches.length > 1 ? ' (' + taches.length + ' tâches ouvertes)' : ''}</label>` : '<div class="meta" style="margin-top:10px">Aucune tâche Climat ouverte au calendrier pour cette salle.</div>'}
+    <label class="f">Note (facultatif)</label><textarea class="in" id="r_note" placeholder="Ex. descente commencée, consigne maintenue volontairement…"></textarea>
+    ${d ? `<div class="meta">Réglage précédent : T ${n1(d.tj)}/${n1(d.tn)} · HR ${n1(d.hrj)}/${n1(d.hrn)} · CO₂ ${n1(d.co2)} · rampe ${n1(d.rampe)}</div>` : ''}
+    <div class="acts"><button class="btn" id="r_prec" ${d ? '' : 'disabled'}>Reprendre le précédent</button></div>
+    <div style="height:10px"></div><button class="btn pri full" id="r_ok">Enregistrer</button>`);
+  const ids = ['r_tj', 'r_tn', 'r_hrj', 'r_hrn', 'r_co2', 'r_rampe'], cle = { r_tj: 'tj', r_tn: 'tn', r_hrj: 'hrj', r_hrn: 'hrn', r_co2: 'co2', r_rampe: 'rampe' };
+  const tol = { tj: 0.3, tn: 0.3, hrj: 1.5, hrn: 1.5, co2: 60, rampe: 0.25 };
+  const verif = () => {
+    const e = [];
+    ids.forEach(id => {
+      const k = cle[id], x = num($(id).value), att = a[k];
+      const bad = x != null && att != null && Math.abs(x - att) > tol[k];
+      $('w_' + id).classList.toggle('ecart', bad);
+      if (bad) e.push(id.replace('r_', '').toUpperCase());
+    });
+    const tj = num($('r_tj').value), tn = num($('r_tn').value);
+    const inv = tj != null && tn != null && tn > tj;
+    $('r_verif').innerHTML = inv ? '<div class="msg warn">Nuit plus chaude que le jour : DIF inversé.</div>' : e.length ? `<div class="msg warn">Écart avec la consigne attendue : ${e.join(', ')}. Ajoutez une note si c'est voulu.</div>` : '<div class="msg ok">Conforme à la cible du jour.</div>';
+  };
+  v.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { const i = $(b.dataset.m); const x = num(i.value) || 0; i.value = String(Math.round((x + +b.dataset.st) * 10) / 10).replace('.', ','); verif(); });
+  ids.forEach(id => $(id).oninput = verif); verif();
+  $('r_prec').onclick = () => { if (!d) return; $('r_tj').value = n1(d.tj); $('r_tn').value = n1(d.tn); $('r_hrj').value = n1(d.hrj); $('r_hrn').value = n1(d.hrn); $('r_co2').value = n1(d.co2); $('r_rampe').value = n1(d.rampe); ids.forEach(id => { if ($(id).value === '—') $(id).value = ''; }); verif(); };
+  $('r_ok').onclick = async () => {
+    const p = { salle, date: $('r_date').value || today(), heure: $('r_heure').value, note: $('r_note').value.trim(), cocherCalendrier: !!($('r_cal') && $('r_cal').checked) };
+    ids.forEach(id => p[cle[id]] = num($(id).value));
+    $('r_ok').disabled = true;
+    try {
+      await envoyer('reglage', p, r => {
+        const t = r.tache && r.tache.titre ? ' · « ' + r.tache.titre + ' » coché au calendrier' : r.tache && r.tache.erreur ? ' · calendrier : ' + r.tache.erreur : '';
+        toast((r.conformite.ok === false ? 'Enregistré avec écart' : 'Réglage enregistré') + t);
+      });
+      v.remove(); await charger(); if (S.vue === 'salle') ouvrirSalle(salle, true);
+    } catch (e) { $('r_ok').disabled = false; }
+  };
+}
+
+/* ---------- Vue « Salle » ---------- */
+async function ouvrirSalle(salle, force, onglet) {
+  if (!S.det[salle] || force || onglet) {
+    if (!S.det[salle]) $('vue').innerHTML = '<div class="empty">Lecture du registre…</div>';
+    try { const r = await api('salle', { salle, round: onglet || (S.det[salle] && S.det[salle].ongletChoisi) || null, force: !!force }); r.ongletChoisi = onglet || (S.det[salle] && S.det[salle].ongletChoisi) || null; S.det[salle] = r; }
+    catch (e) { $('vue').innerHTML = `<div class="msg warn">${esc(e.message)}</div>`; return; }
+  }
+  if (S.vue === 'salle' && S.salle === salle) vueSalle();
+}
+const ONGLETS = [['cible', 'Cible'], ['cmp', 'Comparaison'], ['chg', 'Changements'], ['hist', 'Historique'], ['rel', 'Relevés']];
+function vueSalle() {
+  const d = S.det[S.salle];
+  if (!d) { $('vue').innerHTML = '<div class="empty">Lecture du registre…</div>'; return; }
+  let h = `<div class="chips">${ONGLETS.map(o => `<button class="chip ${S.onglet === o[0] ? 'on' : ''}" data-o="${o[0]}">${o[1]}</button>`).join('')}</div>`;
+  if (d.rounds && d.rounds.length > 1) h += `<div class="chips">${d.rounds.map(r => `<button class="chip ${r.onglet === d.ongletAffiche ? 'on' : ''}" data-r="${esc(r.onglet)}">${esc(r.onglet)}</button>`).join('')}</div>`;
+  h += `<div class="meta">${situationTxt(d)}${d.round ? ' · FLO J1 ' + fD(d.round.floJ1) + ' · récolte ' + fD(d.round.recolte) : ''}</div>`;
+  if (S.onglet === 'cible') h += ongCible(d);
+  else if (S.onglet === 'cmp') h += ongCmp(d);
+  else if (S.onglet === 'chg') h += ongChg(d);
+  else if (S.onglet === 'hist') h += ongHist(d);
+  else h += ongRel(d);
+  $('vue').innerHTML = h;
+  $('vue').querySelectorAll('[data-o]').forEach(b => b.onclick = () => { S.onglet = b.dataset.o; vueSalle(); });
+  $('vue').querySelectorAll('[data-r]').forEach(b => b.onclick = () => ouvrirSalle(S.salle, false, b.dataset.r));
+  $('vue').querySelectorAll('[data-saisir]').forEach(b => b.onclick = () => formReglage(b.dataset.saisir));
+  $('vue').querySelectorAll('[data-annuler]').forEach(b => b.onclick = () => annuler(b.dataset.type, b.dataset.annuler));
+  $('vue').querySelectorAll('[data-export]').forEach(b => b.onclick = () => exporter(S.salle, d.ongletAffiche));
+  $('vue').querySelectorAll('[data-form]').forEach(b => b.onclick = () => ({ ir: formIR, tr: formTransition, obs: formObs })[b.dataset.form](S.salle));
+}
+function ongCible(d) {
+  if (!d.cible) return `<div class="msg acc" style="margin-top:10px">${esc((d.situation && d.situation.motif) || 'Aucune cible aujourd\'hui.')}</div>`;
+  return `<div class="card ${classeCarte(d)}" style="margin-top:10px"><div class="bar"></div><div class="body">
+    <div class="ttl">Cible du jour · ${esc(d.situation.semaine)}</div>${blocCible(d)}${blocRappel(d)}${blocReglage(d)}
+    <div class="acts"><button class="btn pri" data-saisir="${d.salle}">Saisir le réglage</button></div></div></div>
+    ${d.derniereMesure ? `<div class="meta">Dernière mesure Inkbird au registre (${fD(d.derniereMesure.date)}) : jour ${n1(d.derniereMesure.m.tj)} °C / ${n1(d.derniereMesure.m.hrj)} % · nuit ${n1(d.derniereMesure.m.tn)} °C / ${n1(d.derniereMesure.m.hrn)} %</div>` : '<div class="meta">Aucune mesure Inkbird reportée au registre de ce round.</div>'}
+    ${(d.rapports || []).length ? `<h2>Analyses et rapports</h2>${d.rapports.map(r => `<div class="evt"><span class="dt">${fD(r.date)}</span><a class="q" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.nom)}</a></div>`).join('')}` : ''}`;
+}
+function ongCmp(d) {
+  const L = d.comparaison || [];
+  if (!L.length) return '<div class="empty">Rien à comparer pour ce round.</div>';
+  const lib = { 'conforme': 'Conforme', 'mauvais-reglage': 'Mauvais réglage', 'ne-suit-pas': 'Ne suit pas', 'non-inscrit': 'Non inscrit', 'sans-mesure': 'Sans mesure' };
+  const cls = { 'conforme': 'ok', 'mauvais-reglage': 'warn', 'ne-suit-pas': 'amb', 'non-inscrit': 'off', 'sans-mesure': 'off' };
+  const b = d.bilan || {};
+  let h = `<h2>Cible · réglé · mesuré <small>tolérances : réglage ±0,3 °C / ±1,5 % · mesure ±1 °C / ±5 %</small></h2>
+    <div class="bilan">${Object.keys(lib).filter(k => b[k]).map(k => `<span class="tag ${cls[k]}">${lib[k]} : ${b[k]} j</span>`).join('')}</div>
+    <div class="msg acc">« Mauvais réglage » : la consigne entrée ne correspond pas à la cible (avec le décalage du thermostat). « Ne suit pas » : réglage correct, mais la mesure Inkbird s'écarte de la cible.</div>
+    <div class="tw" style="margin-top:8px"><table class="cmp"><thead><tr><th>Jour</th><th>Sem.</th><th>T j cible / réglé / mes.</th><th>T n</th><th>HR j</th><th>HR n</th><th>Diagnostic</th></tr></thead><tbody>`;
+  const tri = (c, r, m) => `${n1(c)}<br><span class="meta">${n1(r)} · ${n1(m)}</span>`;
+  L.forEach(x => {
+    const r = x.regle || {}, m = x.mesure || {};
+    const det = [].concat(x.diag.details || [], x.diag.mesure || []).join(' ; ');
+    h += `<tr><td>${fD(x.date)}</td><td>${esc(x.semaine)}</td><td>${tri(x.cible.tj, r.tj, m.tj)}</td><td>${tri(x.cible.tn, r.tn, m.tn)}</td><td>${tri(x.cible.hrj, r.hrj, m.hrj)}</td><td>${tri(x.cible.hrn, r.hrn, m.hrn)}</td>
+      <td class="d-${x.diag.code}"><b>${esc(lib[x.diag.code] || x.diag.texte)}</b>${det ? '<br><span class="meta">' + esc(det) + '</span>' : ''}</td></tr>`;
+  });
+  return h + '</tbody></table></div><div class="meta">Mesures : moyennes jour/nuit Inkbird reportées au registre de culture (registres au format GACP).</div>';
+}
+function ongChg(d) {
+  const L = d.changements || [];
+  if (!L.length) return '<div class="empty">Aucun changement pour ce round.</div>';
+  const t = S.acc ? S.acc.aujourdhui : today();
+  return `<h2>Changements de consigne <small>arrimage hybride du plan</small></h2><div class="tw">` + L.map(e => {
+    const mods = (e.modifs || []).map(m => m.champ + ' ' + n1(m.de) + '→' + n1(m.a)).join(' · ');
+    const st = e.sansChangement ? '<span class="tag off">sans changement</span>' : e.confirme ? '<span class="tag ok">réglé</span>' : e.conseillee <= t ? '<span class="tag warn">non confirmé</span>' : '<span class="tag acc">à venir</span>';
+    return `<div class="evt"><span class="dt">${fD(e.conseillee)}</span><span class="q"><b>${esc(e.semaine)}</b> ${st}${e.conseillee !== e.date ? ' <span class="meta">(prévu ' + fD(e.date) + ')</span>' : ''}<br><span class="meta">${e.debut ? 'Début du round' : esc(mods)}</span></span></div>`;
+  }).join('') + '</div>';
+}
+function ongHist(d) {
+  let h = `<div class="acts"><button class="btn" data-export="1">Exporter le registre GACP de ce round</button></div><h2>Réglages inscrits</h2>`;
+  if (!d.historique.length) h += '<div class="empty">Aucun réglage.</div>';
+  d.historique.forEach(x => {
+    const v = x.val || {};
+    h += `<div class="card ${x.conformite === 'écart' ? 'alerte' : ''}"><div class="bar"></div><div class="body">
+      <div class="ttl" style="font-size:14px">${fD(x.date)} ${esc(x.heure || '')} · ${esc(x.semaine)} <span class="tag ${x.conformite === 'conforme' ? 'ok' : x.conformite === 'écart' ? 'warn' : 'off'}">${esc(x.conformite)}</span></div>
+      <div class="meta">T ${n1(v.tj)} / ${n1(v.tn)} °C · HR ${n1(v.hrj)} / ${n1(v.hrn)} % · CO₂ ${n1(v.co2)} · rampe ${n1(v.rampe)} h</div>
+      ${x.ecarts ? `<div class="meta" style="color:var(--warn)">${esc(x.ecarts)}</div>` : ''}${x.note ? `<div class="meta">Note : ${esc(x.note)}</div>` : ''}
+      <div class="meta">Inscrit le ${esc(x.horodatage)} <button class="btn dan" style="padding:2px 8px;font-size:12px;margin-left:6px" data-type="reglage" data-annuler="${esc(x.id)}">Annuler</button></div></div></div>`;
+  });
+  if (d.annules && d.annules.length) h += `<h2>Annulés <small>conservés au registre</small></h2>` + d.annules.map(x => `<div class="evt"><span class="dt">${fD(x.date)}</span><span class="q">${esc(x.semaine)} — ${esc(x.motif)} <span class="meta">(${esc(x.le)})</span></span></div>`).join('');
+  return h;
+}
+function ongRel(d) {
+  let h = `<div class="acts"><button class="btn pri" data-form="ir">T feuille IR</button><button class="btn pri" data-form="tr">Transition OFF</button><button class="btn pri" data-form="obs">Observation</button></div>`;
+  h += '<h2>T feuille (IR)</h2>' + (d.ir.length ? d.ir.map(x => `<div class="evt"><span class="dt">${fD(x['Date'])}</span><span class="q">${esc(x['Semaine'])} · feuille <b>${n1(x['T feuille moy. (°C)'])} °C</b> · air ${n1(x['T air (°C)'])} °C · Δ ${n1(x['Delta air − feuille (°C)'])} · marge ${n1(x['Marge feuille − pt rosée (°C)'])} °C <span class="tag ${x['Verdict'] === 'OK' ? 'ok' : 'warn'}">${esc(x['Verdict'])}</span>${x['Statut'] === 'annulé' ? ' <span class="tag off">annulé</span>' : ` <button class="btn dan" style="padding:1px 7px;font-size:12px" data-type="ir" data-annuler="${esc(x['ID'])}">×</button>`}</span></div>`).join('') : '<div class="empty">Aucun relevé.</div>');
+  h += '<h2>Transition OFF</h2>' + (d.transitions.length ? d.transitions.map(x => `<div class="evt"><span class="dt">${fD(x['Date'])}</span><span class="q">${esc(x['Semaine'])} · HR max ${n1(x['HR max 0–90'])} % (plafond ${n1(x['Plafond HR'])}) · chute DP 30/90 : ${n2(x['Chute DP +30'])}/${n2(x['Chute DP +90'])} °C (cible ${n1(x['Chute DP cible'])})<br><span class="meta">Départ ${esc(x['Départ DP'])} · 90 min ${esc(x['DP à 90 min'])} · exposition ${esc(x['Exposition HR'])} · condensation ${esc(x['Condensation'])}</span>${x['Statut'] === 'annulé' ? ' <span class="tag off">annulé</span>' : ` <button class="btn dan" style="padding:1px 7px;font-size:12px" data-type="transition" data-annuler="${esc(x['ID'])}">×</button>`}</span></div>`).join('') : '<div class="empty">Aucune transition notée.</div>');
+  h += '<h2>Observations</h2>' + (d.observations.length ? d.observations.map(x => `<div class="evt"><span class="dt">${fD(x['Date'])}</span><span class="q"><span class="tag acc">${esc(x['Catégorie'])}</span> ${esc(x['Observation'])}${x['Statut'] === 'annulé' ? ' <span class="tag off">annulé</span>' : ` <button class="btn dan" style="padding:1px 7px;font-size:12px" data-type="observation" data-annuler="${esc(x['ID'])}">×</button>`}</span></div>`).join('') : '<div class="empty">Aucune observation.</div>');
+  return h;
+}
+async function annuler(type, id) {
+  const motif = prompt('Motif de l\'annulation (obligatoire, conservé au registre) :', '');
+  if (!motif) return;
+  try { await api('annuler', { type, id, motif }); toast('Annulé (conservé au registre).'); await charger(); ouvrirSalle(S.salle, true); } catch (e) { toast(e.message); }
+}
+async function exporter(salle, onglet) {
+  try { const r = await api('exporter', { salle, onglet }); toast(r.lignes + ' ligne(s) exportée(s).'); window.open(r.url, '_blank'); } catch (e) { toast(e.message); }
+}
+
+/* ---------- Relevés manuels ---------- */
+function choixSalle(id, salle) { return `<label class="f">Salle</label><select class="in" id="${id}">${SALLES.map(s => `<option ${s === salle ? 'selected' : ''}>${s}</option>`).join('')}</select>`; }
+const ptRosee = (t, hr) => { if (t == null || hr == null || hr <= 0) return null; const a = Math.log(hr / 100) + 17.27 * t / (t + 237.3); return 237.3 * a / (17.27 - a); };
+function formIR(salle) {
+  const v = feuille(`<h3>T feuille de nuit (IR)</h3><div class="sous">1 à 3 lectures, ~30–60 min après l'extinction, haut de canopée, feuilles à l'ombre de la lampe.</div>
+    ${choixSalle('i_s', salle)}
+    <div class="duo"><div><label class="f">Date</label><input class="in" id="i_d" type="date" value="${today()}"></div><div><label class="f">Minutes après OFF</label><input class="in" id="i_m" inputmode="numeric" placeholder="45"></div></div>
+    <div class="duo"><div><label class="f">T air (°C)</label><input class="in" id="i_t" inputmode="decimal"></div><div><label class="f">HR (%)</label><input class="in" id="i_hr" inputmode="decimal"></div></div>
+    <div class="trio"><div><label class="f">IR 1 (°C)</label><input class="in" id="i_1" inputmode="decimal"></div><div><label class="f">IR 2</label><input class="in" id="i_2" inputmode="decimal"></div><div><label class="f">IR 3</label><input class="in" id="i_3" inputmode="decimal"></div></div>
+    <div id="i_v"></div><label class="f">Note</label><input class="in" id="i_n">
+    <div style="height:12px"></div><button class="btn pri full" id="i_ok">Enregistrer</button>`);
+  const calc = () => {
+    const t = num($('i_t').value), hr = num($('i_hr').value), L = ['i_1', 'i_2', 'i_3'].map(i => num($(i).value)).filter(x => x != null);
+    if (!L.length) { $('i_v').innerHTML = ''; return; }
+    const f = L.reduce((a, b) => a + b, 0) / L.length, dp = ptRosee(t, hr), m = dp == null ? null : f - dp;
+    $('i_v').innerHTML = `<div class="msg ${m != null && m < 3 ? 'warn' : 'ok'}">Feuille ${n1(f)} °C${t != null ? ' · Δ air − feuille ' + n1(t - f) : ''}${dp != null ? ' · pt rosée ' + n1(dp) + ' · marge ' + n1(m) + ' °C' : ''}</div>`;
+  };
+  ['i_t', 'i_hr', 'i_1', 'i_2', 'i_3'].forEach(i => $(i).oninput = calc);
+  $('i_ok').onclick = async () => {
+    const p = { salle: $('i_s').value, date: $('i_d').value, minutes: $('i_m').value, tAir: $('i_t').value, hr: $('i_hr').value, ir1: $('i_1').value, ir2: $('i_2').value, ir3: $('i_3').value, note: $('i_n').value };
+    try { await envoyer('ir', p, r => toast('Relevé enregistré · ' + r.verdict)); v.remove(); S.det[p.salle] = null; if (S.vue === 'salle') ouvrirSalle(S.salle, true); else rendre(); } catch (e) {}
+  };
+}
+function formTransition(salle) {
+  const s = resume(salle), sem = s && s.situation && s.situation.semaine, c = s && s.cible;
+  const f = (id, l) => `<div><label class="f">${l}</label><input class="in" id="${id}" inputmode="decimal"></div>`;
+  const v = feuille(`<h3>Journal de Transition OFF</h3><div class="sous">${esc(sem || '')}${c ? ' · plafond HR 0–90 min : ' + n1(c.plafondOff) + ' % · chute DP visée : ' + n1(c.chuteDpCible) + ' °C' : ''}</div>
+    ${choixSalle('t_s', salle)}<label class="f">Date</label><input class="in" id="t_d" type="date" value="${today()}">
+    <div class="duo">${f('t_t0', 'T pré-OFF (°C)')}${f('t_h0', 'HR pré-OFF (%)')}</div>
+    <div class="duo">${f('t_t30', 'T +30 min')}${f('t_h30', 'HR +30 min')}</div>
+    <div class="duo">${f('t_t90', 'T +90 min')}${f('t_h90', 'HR +90 min')}</div>
+    <div class="trio">${f('t_max', 'HR max 0–90')}${f('t_min', 'Min. > plafond')}${f('t_surf', 'Surface min (°C)')}</div>
+    <label class="f">Note</label><input class="in" id="t_n"><div style="height:12px"></div><button class="btn pri full" id="t_ok">Enregistrer</button>`);
+  $('t_ok').onclick = async () => {
+    const g = id => $(id).value;
+    const p = { salle: g('t_s'), date: g('t_d'), t0: g('t_t0'), hr0: g('t_h0'), t30: g('t_t30'), hr30: g('t_h30'), t90: g('t_t90'), hr90: g('t_h90'), hrMax: g('t_max'), minutes: g('t_min'), surface: g('t_surf'), note: g('t_n') };
+    try { await envoyer('transition', p, r => toast('Départ ' + r.verdicts.depart + ' · 90 min ' + r.verdicts.a90 + ' · exposition ' + r.verdicts.exposition)); v.remove(); S.det[p.salle] = null; if (S.vue === 'salle') ouvrirSalle(S.salle, true); } catch (e) {}
+  };
+}
+function formObs(salle) {
+  const v = feuille(`<h3>Observation</h3>${choixSalle('o_s', salle)}<label class="f">Date</label><input class="in" id="o_d" type="date" value="${today()}">
+    <label class="f">Catégorie</label><select class="in" id="o_c"><option>Général</option><option>Équipement (déshumidificateur, clim, CO₂)</option><option>Automate</option><option>Capteur</option><option>Plantes</option></select>
+    <label class="f">Observation</label><textarea class="in" id="o_t"></textarea><div style="height:12px"></div><button class="btn pri full" id="o_ok">Enregistrer</button>`);
+  $('o_ok').onclick = async () => {
+    const p = { salle: $('o_s').value, date: $('o_d').value, categorie: $('o_c').value, texte: $('o_t').value.trim() };
+    if (!p.texte) return toast('Observation vide.');
+    try { await envoyer('observation', p, () => toast('Observation enregistrée.')); v.remove(); S.det[p.salle] = null; if (S.vue === 'salle') ouvrirSalle(S.salle, true); } catch (e) {}
+  };
+}
+async function vueReleves() {
+  let h = `<h2>Relevés manuels</h2><div class="acts"><button class="btn pri" id="b_ir">T feuille IR</button><button class="btn pri" id="b_tr">Transition OFF</button><button class="btn pri" id="b_ob">Observation</button></div>
+    <h2>Delta air − feuille de nuit par semaine <small>à reporter dans l'onglet « T feuille nuit » du plan</small></h2><div id="somIR" class="tw"><div class="empty">Calcul…</div></div>`;
+  $('vue').innerHTML = h;
+  const sal = S.salle || 'Salle 3';
+  $('b_ir').onclick = () => formIR(sal); $('b_tr').onclick = () => formTransition(sal); $('b_ob').onclick = () => formObs(sal);
+  try {
+    const r = await api('sommaireIR');
+    $('somIR').innerHTML = r.semaines.length ? '<table class="cmp"><thead><tr><th>Semaine</th><th>Relevés</th><th>Δ moyen (°C)</th><th>Dernières T feuille</th></tr></thead><tbody>' +
+      r.semaines.map(x => `<tr><td>${esc(x.semaine)}</td><td>${x.n}</td><td><b>${n1(x.deltaMoyen)}</b></td><td>${x.lectures.map(n1).join(' · ')}</td></tr>`).join('') + '</tbody></table>' : '<div class="empty">Aucun relevé IR pour l\'instant.</div>';
+  } catch (e) { $('somIR').innerHTML = `<div class="msg warn">${esc(e.message)}</div>`; }
+}
+
+/* ---------- Plus ---------- */
+function vuePlus() {
+  const a = S.acc || {};
+  $('vue').innerHTML = `<h2>Plan VPD</h2><div class="card"><div class="bar"></div><div class="body">
+      <div>${esc(a.plan && a.plan.nom || '')} <span class="meta">lu le ${esc(a.plan && a.plan.lu || '')}</span></div>
+      <div class="meta">Décalage thermostat (paramètre du calendrier) : jour ${n1(a.offsets && a.offsets.jour)} °C · nuit ${n1(a.offsets && a.offsets.nuit)} °C</div>
+      <div class="acts"><button class="btn" id="p_plan">Relire la dernière version du plan</button></div></div></div>
+    <h2>Export GACP</h2><div class="card"><div class="bar"></div><div class="body">
+      ${choixSalle('x_s', S.salle || 'Salle 3')}<div class="meta" style="margin-top:6px">Exporte les réglages du round affiché dans l'écran Salle (ou du round en cours) dans une feuille Google du dossier « Registres des réglages climat ».</div>
+      <div class="acts"><button class="btn pri" id="x_go">Exporter</button></div></div></div>
+    <h2>Règles</h2><div class="card"><div class="bar"></div><div class="body" style="font-size:13.5px">
+      <div><b>Arrimage :</b> VEG = Veg 1, sauf les 7 derniers jours avant FLO (Veg 2). FLO = Flo 1–3 depuis FLO J1, Flo 7–10 à rebours depuis la récolte, Flo 4–6 au milieu.</div>
+      <div style="margin-top:6px"><b>Cible :</b> tableau de consignes du registre (format GACP), sinon dernière version du Plan VPD. Les écarts entre les deux sont signalés.</div>
+      <div style="margin-top:6px"><b>Changement en fin de semaine :</b> samedi → vendredi, dimanche → lundi. Le rappel reste actif jusqu'au réglage inscrit (ou ignoré avec motif).</div>
+      <div style="margin-top:6px"><b>Traçabilité :</b> rien n'est effacé ; une annulation garde la ligne avec son motif.</div></div></div>
+    <div class="acts" style="margin-top:14px"><button class="btn dan" id="p_out">Se déconnecter</button></div><div id="fileInfo" class="file"></div>`;
+  majFile();
+  $('p_plan').onclick = async () => { try { await api('plan', { force: true }); await charger(true); toast('Plan relu.'); } catch (e) { toast(e.message); } };
+  $('x_go').onclick = () => { const s = $('x_s').value; exporter(s, S.det[s] && S.det[s].ongletAffiche); };
+  $('p_out').onclick = () => { store('clim_code', null); store('clim_api', null); location.reload(); };
+}
+
+/* ---------- Mode nuit (19 h – 7 h, comme les autres apps) ---------- */
+const THEMES = { auto: ['🌓', 'Mode nuit : automatique (19 h – 7 h)'], nuit: ['🌙', 'Mode nuit : toujours'], jour: ['☀️', 'Mode nuit : jamais'] };
+function appliquerTheme() {
+  const choix = load('clim_theme') || 'auto', h = new Date().getHours();
+  const nuit = choix === 'nuit' || (choix === 'auto' && (h >= 19 || h < 7));
+  document.documentElement.classList.toggle('nuit', nuit);
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', nuit ? '#101318' : '#f3f4f6');
+  $('theme').textContent = THEMES[choix][0]; $('theme').title = THEMES[choix][1];
+}
+$('theme').onclick = () => { const o = ['auto', 'nuit', 'jour'], c = load('clim_theme') || 'auto'; store('clim_theme', o[(o.indexOf(c) + 1) % 3]); appliquerTheme(); toast(THEMES[load('clim_theme')][1]); };
+appliquerTheme(); setInterval(appliquerTheme, 60000);
+
+if ('serviceWorker' in navigator && /github\.io$/.test(location.hostname)) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+/* ---------- Démarrage ---------- */
+S.file = load('clim_file') || [];
+S.acc = load('clim_acc');
+const code = load('clim_code');
+if (code) { $('app').classList.remove('hidden'); rendre(); connexion(code); } else $('login').classList.remove('hidden');
+</script>
+</body>
+</html>
