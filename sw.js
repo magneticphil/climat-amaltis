@@ -1,6 +1,6 @@
 /* Climat — Amaltis : l'écran s'ouvre même sans réseau (réseau d'abord, copie locale après 4 s).
    Les données ne passent jamais par ici : elles viennent du script Google. */
-const CACHE = 'climat-v5';
+const CACHE = 'climat-v6';
 const FICHIERS = ['./', './index.html', './manifest.webmanifest', './icone-180.png', './icone-192.png', './icone-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FICHIERS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {

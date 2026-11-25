@@ -643,8 +643,12 @@ function resumeSalle_(salle, reg, plan, cal, today, reglagesTous, rappels, tache
   }
   // Dernière mesure Inkbird au registre
   if (r) {
-    var jours = Object.keys(r.mesures).sort();
-    if (jours.length) { var j = jours[jours.length - 1]; o.derniereMesure = { date: j, m: r.mesures[j] }; }
+    // Dernière valeur connue de CHAQUE grandeur : la nuit d'hier compte même si celle d'aujourd'hui manque
+    var jours = Object.keys(r.mesures).sort(), m = {}, dates = {};
+    ['tj', 'hrj', 'tn', 'hrn', 'co2'].forEach(function (k) {
+      for (var q = jours.length - 1; q >= 0; q--) { var v = r.mesures[jours[q]][k]; if (v !== null && v !== undefined) { m[k] = v; dates[k] = jours[q]; break; } }
+    });
+    if (Object.keys(m).length) o.derniereMesure = { date: dates.tj || dates.tn || jours[jours.length - 1], m: m, dates: dates };
   }
   return o;
 }

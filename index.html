@@ -352,7 +352,7 @@ function vueReglage() {
     </details>
     ${(s.tachesCalendrier || []).length ? `<label class="check"><input type="checkbox" id="r_cal" checked> Cocher « ${esc(s.tachesCalendrier[0].titre)} » au calendrier</label>` : ''}
     <button class="btn primary" id="b_ok">Enregistrer le réglage</button>
-    <div class="muted" style="font-size:.82rem">${last ? 'Dernier réglage : ' + fD(s.dernierReglage.date) + ' ' + esc(s.dernierReglage.heure || '') + ' — T ' + f1(last.tj) + '/' + f1(last.tn) + ' °C · HR ' + f1(last.hrj) + '/' + f1(last.hrn) + ' % · CO₂ ' + f1(last.co2) : 'Aucun réglage inscrit pour cette salle.'}${s.derniereMesure ? '<br>Mesure Inkbird au registre : ' + fD(s.derniereMesure.date) : ''}</div>
+    <div class="muted" style="font-size:.82rem">${last ? 'Dernier réglage : ' + fD(s.dernierReglage.date) + ' ' + esc(s.dernierReglage.heure || '') + ' — T ' + f1(last.tj) + '/' + f1(last.tn) + ' °C · HR ' + f1(last.hrj) + '/' + f1(last.hrn) + ' % · CO₂ ' + f1(last.co2) : 'Aucun réglage inscrit pour cette salle.'}${s.derniereMesure ? '<br>Mesures Inkbird lues dans le registre (jour : ' + fC(s.derniereMesure.dates.tj) + ', nuit : ' + fC(s.derniereMesure.dates.tn) + ')' : '<br>Aucune mesure Inkbird dans le registre de ce round.'}</div>
   </div>`;
   $('vue').innerHTML = h;
   ORDRE.forEach(k => majCarte(s, k));
@@ -363,11 +363,12 @@ function vueReglage() {
 }
 function carte(s, k) {
   const c = CH[k], prop = s.propose || {}, cib = s.cible || {}, mes = s.derniereMesure ? s.derniereMesure.m : null;
+  const md = s.derniereMesure && s.derniereMesure.dates ? s.derniereMesure.dates[k] : null;
   const v = S.draft[k], p = prop[k], m = mes ? mes[k] : null, diff = v != null && p != null && Math.abs(v - p) > c.tol;
   return `<div class="gl"><span class="label">${c.nom}</span><span class="label" style="color:var(--warn)">${diff ? 'écart' : ''}</span></div>
     ${cadran(k, v, cib[k], p, m)}
     <div class="val">${f1(v)}<small>${c.u}</small></div>
-    <div class="sub"><span class="t">cible ${f1(cib[k])}</span>${p !== cib[k] ? ' · panneau ' + f1(p) : ''}${m != null ? '<br><span class="m">mesuré ' + f1(m) + '</span>' : ''}</div>
+    <div class="sub"><span class="t">cible ${f1(cib[k])}</span>${p !== cib[k] ? ' · panneau ' + f1(p) : ''}${m != null ? '<br><span class="m">mesuré ' + f1(m) + (md ? ' · ' + fC(md) : '') + '</span>' : '<br><span class="m">pas de mesure</span>'}</div>
     <div class="step"><button data-k="${k}" data-d="-1" aria-label="Diminuer ${c.nom}">−</button><button data-k="${k}" data-d="1" aria-label="Augmenter ${c.nom}">+</button></div>`;
 }
 function majCarte(s, k) {
