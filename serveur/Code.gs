@@ -384,7 +384,7 @@ function lireRegistre_(salle, force) {
     var book = SpreadsheetApp.openById(id);
     var tz = book.getSpreadsheetTimeZone();
     var tabs = book.getSheets().filter(function (sh) { return /round/i.test(sh.getName()); }).map(function (sh) {
-      var b = sh.getRange('B1:B3').getValues();
+      var b = sh.getRange('B1:B3').getDisplayValues(); // texte affiché : évite les décalages de fuseau (registre en Etc/GMT)
       return { sh: sh, start: dateCellule_(b[0][0], tz), veg: num_(b[1][0]), flo: num_(b[2][0]) };
     }).filter(function (t) { return t.start && t.veg !== null && t.flo !== null; });
     tabs.sort(function (a, b) { return a.start < b.start ? -1 : 1; });
