@@ -256,7 +256,7 @@ async function charger(force) {
   S.acc = r; store('clim_acc', r);
   if (force) S.det = {};
   if (!S.salle || !r.salles.find(x => x.salle === S.salle)) { const a = r.salles.find(s => s.rappel); S.salle = (a || r.salles[1] || r.salles[0]).salle; }
-  S.draft = null;
+  /* les positions des cadrans sont conservées après un enregistrement ou une actualisation */
   rendre();
   prechargerDetails();
 }
@@ -337,7 +337,11 @@ function vueReglage() {
   const s = res(); if (!s) return;
   const prop = s.propose || {}, cib = s.cible || {}, last = s.dernierReglage && s.dernierReglage.val;
   const mes = s.derniereMesure ? s.derniereMesure.m : null;
-  if (!S.draft) S.draft = Object.assign({}, prop);
+  if (!S.draft) {
+    // Par défaut : le dernier réglage inscrit (ce qui est au panneau), sauf si un changement de consigne est dû.
+    const base = (s.dernierReglage && s.dernierReglage.val && !s.rappel) ? s.dernierReglage.val : prop;
+    S.draft = {}; ORDRE.forEach(k => S.draft[k] = base[k] != null ? base[k] : prop[k]);
+  }
   let h = situation(s) + bannieres(s);
   if (!s.cible) { $('vue').innerHTML = h + '<div class="panel"><div class="empty">Aucune cible aujourd\'hui pour cette salle.</div></div>'; return; }
   const viaPlan = s.plan && s.attendu && ORDRE.some(k => prop[k] !== s.attendu[k]);
