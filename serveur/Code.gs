@@ -227,10 +227,11 @@ function semaineDuJour_(veg, flo, jour) {
   var res = { phase: 'FLO', jourPhase: f };
   if (f <= 21) { res.label = 'Flo ' + Math.ceil(f / 7); return res; }
   if (f > flo - 28) { res.label = 'Flo ' + (10 - Math.floor((flo - f) / 7)); return res; }
-  var milieu = flo - 49;
-  var n = Math.min(3, Math.max(1, Math.round(milieu / 7)));
-  var k = Math.min(n - 1, Math.floor((f - 22) / 7));
-  res.label = 'Flo ' + (4 + k);
+  // Milieu comprimé : les jours entre Flo 3 et la descente sont répartis entre Flo 4, 5 et 6
+  // (70 j → 7/7/7 ; 65 j → 5/5/6 ; 63 j → 4/5/5 ; 56 j → 2/2/3). Aucune semaine n'est sautée.
+  var m = flo - 49, k = f - 22;
+  var s4 = Math.floor(m / 3), s5 = Math.floor((m + 1) / 3);
+  res.label = k < s4 ? 'Flo 4' : k < s4 + s5 ? 'Flo 5' : 'Flo 6';
   return res;
 }
 
