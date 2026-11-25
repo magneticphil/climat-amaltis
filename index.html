@@ -356,7 +356,7 @@ function vueReglage() {
     </details>
     ${(s.tachesCalendrier || []).length ? `<label class="check"><input type="checkbox" id="r_cal" checked> Cocher « ${esc(s.tachesCalendrier[0].titre)} » au calendrier</label>` : ''}
     <button class="btn primary" id="b_ok">Enregistrer le réglage</button>
-    <div class="muted" style="font-size:.82rem">${last ? 'Dernier réglage : ' + fD(s.dernierReglage.date) + ' ' + esc(s.dernierReglage.heure || '') + ' — T ' + f1(last.tj) + '/' + f1(last.tn) + ' °C · HR ' + f1(last.hrj) + '/' + f1(last.hrn) + ' % · CO₂ ' + f1(last.co2) : 'Aucun réglage inscrit pour cette salle.'}${s.derniereMesure ? '<br>Mesures Inkbird lues dans le registre (jour : ' + fC(s.derniereMesure.dates.tj) + ', nuit : ' + fC(s.derniereMesure.dates.tn) + ')' : '<br>Aucune mesure Inkbird dans le registre de ce round.'}</div>
+    <div class="muted" style="font-size:.82rem">${last ? 'Dernier réglage : ' + fD(s.dernierReglage.date) + ' ' + esc(s.dernierReglage.heure || '') + ' — T ' + f1(last.tj) + '/' + f1(last.tn) + ' °C · HR ' + f1(last.hrj) + '/' + f1(last.hrn) + ' % · CO₂ ' + f1(last.co2) : 'Aucun réglage inscrit pour cette salle.'}${s.derniereMesure ? '<br>Mesures Inkbird lues dans le registre (jour : ' + fC((s.derniereMesure.dates || {}).tj || s.derniereMesure.date) + ', nuit : ' + fC((s.derniereMesure.dates || {}).tn || s.derniereMesure.date) + ')' : '<br>Aucune mesure Inkbird dans le registre de ce round.'}</div>
   </div>`;
   $('vue').innerHTML = h;
   ORDRE.forEach(k => majCarte(s, k));
