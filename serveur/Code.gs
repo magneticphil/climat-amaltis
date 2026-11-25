@@ -149,10 +149,11 @@ function doPost(e) {
 
 function verifierCode_(code, props) {
   var cache = CacheService.getScriptCache();
-  var echecs = Number(cache.get('echecs') || 0);
-  if (echecs >= 5) return false;
-  var ok = code && String(code) === String(props.getProperty('CODE'));
-  if (!ok) cache.put('echecs', String(echecs + 1), 900);
+  var echecs = Number(cache.get('echecs_v2') || 0);
+  if (echecs >= 10) return false; // 10 essais ratés → pause de 10 minutes
+  var ok = code && String(code).trim() === String(props.getProperty('CODE'));
+  if (!ok) cache.put('echecs_v2', String(echecs + 1), 600);
+  else if (echecs) cache.remove('echecs_v2');
   return !!ok;
 }
 

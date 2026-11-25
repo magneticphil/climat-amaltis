@@ -152,7 +152,7 @@ details[open] summary{margin-bottom:10px}
     <h1>Climat</h1>
     <p class="muted" style="margin:0">Cibles par semaine, réglages du panneau et descente, écrits dans le registre de culture.</p>
     <div id="apiBloc" class="field"><span class="label">Adresse du script (…/exec)</span><input type="text" id="apiUrl" autocomplete="off"></div>
-    <div class="field"><span class="label">Code d'accès</span><input type="password" id="code" inputmode="numeric" autocomplete="current-password"></div>
+    <div class="field"><span class="label">Code d'accès</span><input type="text" id="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" autocorrect="off" autocapitalize="off" spellcheck="false" style="-webkit-text-security:disc"></div>
     <button class="btn primary" id="go">Entrer</button>
   </div>
 </div>
@@ -240,7 +240,7 @@ setInterval(viderFile, 30000); window.addEventListener('online', viderFile);
 async function connexion(code) {
   S.code = code;
   try { await api('ping'); store('clim_code', code); $('login').hidden = true; $('app').hidden = false; await charger(); viderFile(); }
-  catch (e) { S.code = null; store('clim_code', null); $('app').hidden = true; $('login').hidden = false; if (code) toast(e.auth ? 'Code invalide.' : e.message); }
+  catch (e) { S.code = null; store('clim_code', null); $('app').hidden = true; $('login').hidden = false; if (code) toast(e.auth ? 'Code refusé. Vérifiez les 6 chiffres (après 10 essais ratés, attendez 10 minutes).' : e.message); }
 }
 $('go').onclick = () => {
   const u = $('apiUrl').value.trim();
