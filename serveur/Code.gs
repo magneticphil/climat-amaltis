@@ -131,7 +131,11 @@ function doPost(e) {
       rappel: function () { return actionRappel_(p); },
       exporter: function () { return exporter_(p); },
       plan: function () { return { plan: majPlan_(!!p.force) }; },
-      sommaireIR: function () { return sommaireIR_(); }
+      sommaireIR: function () { return sommaireIR_(); },
+      cible: function () { return modifierCible_(p); },
+      descenteApercu: function () { return descente_(p, false); },
+      descente: function () { return descente_(p, true); },
+      historique: function () { return historique_(p.salle); }
     };
     if (!actions[a]) return json_({ ok: false, erreur: 'Action inconnue : ' + a });
     var out = actions[a]();
@@ -600,7 +604,26 @@ function resumeSalle_(salle, reg, plan, cal, today, reglagesTous, rappels, tache
     }
     o.aujourdhuiChangement = ch.some(function (e) { return e.conseillee === today && !e.sansChangement; });
     o.prochain = ch.filter(function (e) { return e.conseillee > today && !e.sansChangement; })[0] || null;
+    // Plan de rattrapage (récolte avancée) : il prime sur la consigne de la semaine tant qu'il dure
+    var pa = planActif_(salle, r.round);
+    if (pa) {
+      o.plan = pa;
+      var step = pa.etapes.filter(function (e) { return e.date <= today; }).pop() || null;
+      o.planProchaine = pa.etapes.filter(function (e) { return e.date > today; })[0] || null;
+      if (step) {
+        o.propose = step.val;
+        var vd = regVal_(dernier), vr = verifierReglage_(vd, step.val);
+        o.etatReglage = dernier ? (vr.ok ? 'conforme' : 'ecart') : 'aucun';
+        o.ecartsReglage = vr.ecarts;
+        if (!dernier || !vr.ok) {
+          var mods = [];
+          ['tj', 'hrj', 'tn', 'hrn', 'co2', 'rampe'].forEach(function (k) { if (!vd || vd[k] !== step.val[k]) mods.push({ champ: CHAMPS[k], de: vd ? vd[k] : null, a: step.val[k] }); });
+          o.rappel = { semaine: step.semaine, date: step.date, conseillee: step.date, retard: ecartJours_(step.date, today), rattrapage: true, modifs: mods };
+        } else if (o.rappel && o.rappel.conseillee <= step.date) o.rappel = null;
+      }
+    }
   }
+  o.propose = o.propose || o.attendu || null;
   // Tâches Climat du calendrier
   var tc = taches.filter(function (t) { return t.salle === salle; });
   o.tachesCalendrier = tc.filter(function (t) { return t.statut !== 'fait' && t.date <= plusJours_(today, 7); });
@@ -704,6 +727,14 @@ function salle_(salle, ongletVoulu, force) {
     r = reg.rounds.filter(function (x) { return x.start <= today; }).pop() || reg.rounds[reg.rounds.length - 1];
   }
   res.ongletAffiche = r ? r.onglet : null;
+  res.editable = !!(r && r.gacp);
+  if (r) {
+    res.semaines = semainesRound_(r, plan, cal, today);
+    res.roundAffiche = { onglet: r.onglet, start: r.start, veg: r.veg, flo: r.flo, recolte: r.recolte, floJ1: plusJours_(r.start, r.veg), fin: r.fin };
+  } else if (reg.continu) {
+    var cv = cible_(null, 'Veg 1', plan);
+    res.semaines = [{ semaine: 'Veg 1', courante: true, cible: cv, attendu: attendu_(cv, cal), source: cv.source }];
+  }
   if (r) {
     res.changements = changements_(r, plan).map(function (e) {
       e.confirme = regs.some(function (x) { return x['Round'] == r.round && x['Semaine'] === e.semaine; });
@@ -777,6 +808,10 @@ function enregistrerReglage_(p) {
   var x = contexte_(p.salle, iso);
   var val = { tj: num_(p.tj), hrj: num_(p.hrj), tn: num_(p.tn), hrn: num_(p.hrn), co2: num_(p.co2), rampe: num_(p.rampe) };
   if ([val.tj, val.hrj, val.tn, val.hrn, val.co2, val.rampe].every(function (n) { return n === null; })) throw new Error('Aucune valeur saisie.');
+  if (x.sit.round) { // un plan de rattrapage actif remplace la consigne attendue
+    var pa = planActif_(p.salle, x.sit.round), st = pa && pa.etapes.filter(function (e) { return e.date <= iso; }).pop();
+    if (st) x.attendu = st.val;
+  }
   var verif = verifierReglage_(val, x.attendu);
   var semaine = p.semaine || (x.sit.vide ? '' : x.sit.semaine);
   var c = x.cible || {};
@@ -793,7 +828,10 @@ function enregistrerReglage_(p) {
       tache && tache.id ? tache.id + ' · ' + tache.titre : '']);
   } finally { lock.releaseLock(); }
   journal_('réglage', p.salle, id, semaine + ' · ' + JSON.stringify(val) + (verif.ecarts.length ? ' · écarts : ' + verif.ecarts.join(' ; ') : ''));
-  return { id: id, conformite: verif, tache: tache };
+  var registre = null;
+  try { registre = ecrireRegleRegistre_(p.salle, iso, val, p.heure || heure_()); } catch (e) { registre = { ok: false, motif: String(e.message || e) }; }
+  CacheService.getScriptCache().remove('reg:' + p.salle);
+  return { id: id, conformite: verif, tache: tache, registre: registre };
 }
 
 function enregistrerIR_(p) {
@@ -943,4 +981,262 @@ function sousDossierExport_() {
 // ───────────────────────────── Journal ─────────────────────────────
 function journal_(action, objet, id, details) {
   try { ss_().getSheetByName('Journal').appendRow([maintenant_(), action, objet || '', id || '', details || '']); } catch (e) {}
+}
+
+// ═════════════════════════════ Écriture dans le registre de culture ═════════════════════════════
+var REG_HEAD = ['Réglé T jour (°C)', 'Réglé HR jour (%)', 'Réglé T nuit (°C)', 'Réglé HR nuit (%)', 'Réglé CO₂ (ppm)', 'Réglé rampe (h)', 'Réglé – heure / par'];
+var CONSIGNE_HEAD = ['T jour consigne', 'HR jour consigne', 'VPD min consigne', 'VPD max consigne', 'T nuit consigne', 'HR nuit consigne', 'HR nuit max consigne', 'CO₂ consigne (appliquée)'];
+var TABLE_OFF = { tj: 2, hrj: 3, tn: 4, hrn: 5, rampe: 10, co2: 11 };
+var CHAMPS = { tj: 'T jour', hrj: 'HR jour', tn: 'T nuit', hrn: 'HR nuit', co2: 'CO₂', rampe: 'Rampe' };
+
+function tab_(nom, entetes) {
+  var s = ss_(), sh = s.getSheetByName(nom);
+  if (!sh) { sh = s.insertSheet(nom); sh.getRange(1, 1, 1, entetes.length).setValues([entetes]).setFontWeight('bold').setBackground('#e6ebf0'); sh.setFrozenRows(1); }
+  return sh;
+}
+
+/** Ouvre l'onglet du round en cours (ou nommé) d'un registre, avec repères de colonnes. */
+function ctxRound_(salle, onglet) {
+  if (salle === CFG.SALLE_MERES) return null;
+  var book = SpreadsheetApp.openById(paramsCalendrier_().registres[salle]);
+  var tz = book.getSpreadsheetTimeZone();
+  var tabs = book.getSheets().filter(function (sh) { return /round/i.test(sh.getName()); }).map(function (sh) {
+    var b = sh.getRange('B1:B3').getDisplayValues();
+    return { sh: sh, start: dateCellule_(b[0][0], tz), veg: num_(b[1][0]), flo: num_(b[2][0]) };
+  }).filter(function (t) { return t.start && t.veg !== null && t.flo !== null; }).sort(function (a, b) { return a.start < b.start ? -1 : 1; });
+  var today = aujourdhui_(), t = null;
+  if (onglet) t = tabs.filter(function (x) { return x.sh.getName() === onglet; })[0];
+  if (!t) t = tabs.filter(function (x) { return x.start <= today; }).pop() || tabs[tabs.length - 1];
+  if (!t) throw new Error('Aucun round trouvé dans le registre de ' + salle + '.');
+  var sh = t.sh, lastCol = sh.getLastColumn(), lastRow = Math.max(7, sh.getLastRow());
+  var v = sh.getRange(1, 1, Math.min(lastRow, 220), lastCol).getValues();
+  var H = v[5].map(function (h) { return String(h).replace(/\s+/g, ' ').trim(); });
+  var ctx = { book: book, sh: sh, onglet: sh.getName(), round: (sh.getName().match(/(\d+)/) || [, sh.getName()])[1], start: t.start, veg: t.veg, flo: t.flo, v: v, H: H, lastCol: lastCol };
+  ctx.cDay = H.indexOf('Day');
+  ctx.cObs = H.indexOf('Observations / écarts');
+  ctx.cCons = CONSIGNE_HEAD.map(function (n) { return H.indexOf(n); });
+  ctx.tableCol = -1;
+  for (var j = 20; j < lastCol; j++) if (String(v[4][j]).trim() === 'Semaine' && String(v[4][j + 1]).trim() === 'Phase') { ctx.tableCol = j; break; }
+  ctx.cReg = H.indexOf(REG_HEAD[0]);
+  return ctx;
+}
+
+/** Ligne (1-based) du registre pour une date, ou -1 si hors du round. */
+function ligneDuJour_(ctx, iso) {
+  var j = ecartJours_(ctx.start, iso) + 1;
+  if (j < 1 || ctx.cDay < 0) return -1;
+  for (var r = 6; r < ctx.v.length; r++) if (num_(ctx.v[r][ctx.cDay]) === j) return r + 1;
+  return -1;
+}
+
+/** Fige les consignes des jours passés (formules → valeurs) pour que l'historique ne soit pas réécrit. */
+function figerPasses_(ctx) {
+  var cols = ctx.cCons.filter(function (c) { return c >= 0; });
+  if (!cols.length) return 0;
+  var hier = plusJours_(aujourdhui_(), -1), fin = ligneDuJour_(ctx, hier);
+  if (fin < 0) { // le round a peut-être commencé aujourd'hui, ou il est terminé
+    var j = ecartJours_(ctx.start, hier) + 1;
+    if (j < 1) return 0;
+    fin = 0; for (var r = 6; r < ctx.v.length; r++) if (num_(ctx.v[r][ctx.cDay]) !== null) fin = r + 1;
+  }
+  if (fin < 7) return 0;
+  var c0 = Math.min.apply(null, cols), c1 = Math.max.apply(null, cols);
+  var rg = ctx.sh.getRange(7, c0 + 1, fin - 6, c1 - c0 + 1);
+  var f = rg.getFormulas(), vals = rg.getValues(), n = 0;
+  f.forEach(function (row) { row.forEach(function (x) { if (x) n++; }); });
+  if (n) rg.setValues(vals);
+  return n;
+}
+
+/** Crée au besoin le bloc « Réglé automate » à droite du registre ; renvoie sa 1re colonne (1-based). */
+function blocRegle_(ctx) {
+  if (ctx.cReg >= 0) return ctx.cReg + 1;
+  var last = 0;
+  ctx.v[5].forEach(function (x, i) { if (String(x).trim() !== '') last = i; });
+  if (ctx.tableCol >= 0) last = Math.max(last, ctx.tableCol + 12);
+  var col = last + 3; // une colonne vide de séparation
+  var need = col + REG_HEAD.length - 1;
+  if (ctx.sh.getMaxColumns() < need) ctx.sh.insertColumnsAfter(ctx.sh.getMaxColumns(), need - ctx.sh.getMaxColumns());
+  ctx.sh.getRange(5, col).setValue('Réglé automate — saisi dans l\'app Climat (valeurs entrées au panneau)').setFontWeight('bold');
+  ctx.sh.getRange(6, col, 1, REG_HEAD.length).setValues([REG_HEAD]).setFontWeight('bold').setBackground('#dcecf2').setWrap(true);
+  ctx.cReg = col - 1;
+  return col;
+}
+
+function ajouterObservation_(ctx, iso, texte) {
+  if (ctx.cObs < 0) return false;
+  var row = ligneDuJour_(ctx, iso);
+  if (row < 0) return false;
+  var cell = ctx.sh.getRange(row, ctx.cObs + 1), cur = String(cell.getValue() || '').trim();
+  cell.setValue(cur ? cur + ' · ' + texte : texte);
+  return true;
+}
+
+function ecrireRegleRegistre_(salle, iso, val, heure) {
+  var ctx = ctxRound_(salle);
+  if (!ctx) return { ok: false, motif: 'Salle 2 : pas de registre par round' };
+  var row = ligneDuJour_(ctx, iso);
+  if (row < 0) return { ok: false, motif: 'date hors du round ' + ctx.onglet };
+  var col = blocRegle_(ctx);
+  var ex = String(ctx.sh.getRange(row, col + 6).getValue() || '');
+  var trace = heure + ' · Phil' + (ex ? ' (remplace ' + ex + ')' : '');
+  ctx.sh.getRange(row, col, 1, 7).setValues([[val.tj, val.hrj, val.tn, val.hrn, val.co2, val.rampe, trace]]
+    .map(function (r) { return r.map(function (x) { return x === null || x === undefined ? '' : x; }); }));
+  return { ok: true, onglet: ctx.onglet, ligne: row };
+}
+
+// ───────────── Modifier les cibles (tableau de consignes du registre) ─────────────
+function modifierCible_(p) {
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var ctx = ctxRound_(p.salle, p.onglet);
+    if (!ctx || ctx.tableCol < 0) throw new Error('Le registre de ' + p.salle + ' n\'a pas de tableau de consignes (format GACP au prochain round).');
+    var semaines = (p.semaines || []).filter(function (s) { return SEMAINES.indexOf(s) >= 0; });
+    if (!semaines.length) throw new Error('Aucune semaine choisie.');
+    var champs = Object.keys(p.valeurs || {}).filter(function (k) { return TABLE_OFF[k] !== undefined && num_(p.valeurs[k]) !== null; });
+    if (!champs.length) throw new Error('Aucune valeur à modifier.');
+    var figes = figerPasses_(ctx);
+    var modifs = [], j = ctx.tableCol;
+    semaines.forEach(function (s) {
+      for (var r = 4; r < Math.min(ctx.v.length, 30); r++) {
+        if (String(ctx.v[r][j]).trim() !== s) continue;
+        champs.forEach(function (k) {
+          var anc = num_(ctx.v[r][j + TABLE_OFF[k]]), nouv = num_(p.valeurs[k]);
+          if (p.mode === 'decaler') nouv = anc === null ? null : arr1_(anc + num_(p.valeurs[k]));
+          if (nouv === null || anc === nouv) return;
+          ctx.sh.getRange(r + 1, j + TABLE_OFF[k] + 1).setValue(nouv);
+          modifs.push({ semaine: s, champ: k, de: anc, a: nouv });
+        });
+      }
+    });
+    if (!modifs.length) return { modifs: [], figes: figes };
+    var today = aujourdhui_(), now = maintenant_();
+    var txt = 'Cible modifiée (app Climat) : ' + resumeModifs_(modifs) + (p.motif ? ' — ' + p.motif : '');
+    ajouterObservation_(ctx, today, txt);
+    var sh = tab_('Modifs cibles', ['ID', 'Horodatage', 'Salle', 'Round', 'Semaine', 'Champ', 'Ancienne valeur', 'Nouvelle valeur', 'Motif', 'Par']);
+    var id = id_();
+    sh.getRange(sh.getLastRow() + 1, 1, modifs.length, 10).setValues(modifs.map(function (m) { return [id, now, p.salle, ctx.round, m.semaine, CHAMPS[m.champ], m.de, m.a, p.motif || '', 'Phil']; }));
+    journal_('cible', p.salle, id, txt + (figes ? ' · ' + figes + ' consigne(s) passée(s) figée(s)' : ''));
+    CacheService.getScriptCache().remove('reg:' + p.salle);
+    return { modifs: modifs, figes: figes, id: id };
+  } finally { lock.releaseLock(); }
+}
+
+function resumeModifs_(modifs) {
+  var par = {};
+  modifs.forEach(function (m) { var k = CHAMPS[m.champ] + ' ' + m.de + '→' + m.a; (par[k] = par[k] || []).push(m.semaine); });
+  return Object.keys(par).map(function (k) { return k + ' (' + par[k].join(', ') + ')'; }).join(' ; ');
+}
+
+// ───────────── Assistant de descente (récolte avancée ou reportée) ─────────────
+function cloneRound_(r, flo) {
+  var o = JSON.parse(JSON.stringify(r));
+  o.flo = flo; o.fin = plusJours_(r.start, r.veg + flo - 1); o.recolte = plusJours_(r.start, r.veg + flo);
+  return o;
+}
+
+/** Plan de rattrapage, jours ouvrables seulement : chaque jour, on se rapproche de la consigne
+ *  attendue d'au plus maxT °C et maxHR points d'HR ; CO₂ et rampe suivent directement. */
+function rattrapage_(r2, plan, cal, depuis, depart, maxT, maxHR) {
+  var etapes = [], cur = JSON.parse(JSON.stringify(depart));
+  var vers = function (a, b, m) { if (a === null || a === undefined) return b; if (b === null || b === undefined) return a; var d = b - a; return Math.abs(d) <= m ? b : arr1_(a + (d > 0 ? m : -m)); };
+  for (var iso = depuis; iso <= r2.fin; iso = plusJours_(iso, 1)) {
+    var dw = jourSemaine_(iso);
+    if (dw === 0 || dw === 6) continue;
+    var j = ecartJours_(r2.start, iso) + 1, s = semaineDuJour_(r2.veg, r2.flo, j);
+    if (!s) break;
+    var att = attendu_(cible_(r2, s.label, plan), cal);
+    var nxt = { tj: vers(cur.tj, att.tj, maxT), tn: vers(cur.tn, att.tn, maxT), hrj: vers(cur.hrj, att.hrj, maxHR), hrn: vers(cur.hrn, att.hrn, maxHR), co2: att.co2, rampe: att.rampe };
+    var change = ['tj', 'tn', 'hrj', 'hrn', 'co2', 'rampe'].some(function (k) { return nxt[k] !== cur[k]; });
+    var rejoint = ['tj', 'tn', 'hrj', 'hrn'].every(function (k) { return nxt[k] === att[k]; });
+    if (change) etapes.push({ date: iso, semaine: s.label, val: nxt, attendu: att, rejoint: rejoint });
+    cur = nxt;
+    if (rejoint) break; // consigne rattrapée : la suite du calendrier normal prend le relais
+  }
+  return etapes;
+}
+
+function descente_(p, appliquer) {
+  var plan = majPlan_(false), cal = paramsCalendrier_(), today = aujourdhui_();
+  var reg = lireRegistre_(p.salle, true);
+  var r = reg.rounds.filter(function (x) { return x.start <= today; }).pop();
+  if (!r) throw new Error('Aucun round en cours pour ' + p.salle + '.');
+  var flo = num_(p.flo);
+  if (flo === null || flo < 42 || flo > 77) throw new Error('Nombre de jours de FLO invalide (42 à 77).');
+  var r2 = cloneRound_(r, flo);
+  var jour = ecartJours_(r.start, today) + 1;
+  if (jour > r.veg + flo) throw new Error('Avec ' + flo + ' j de FLO, la récolte serait déjà passée.');
+  var s1 = semaineDuJour_(r.veg, r.flo, jour), s2 = semaineDuJour_(r2.veg, r2.flo, jour);
+  var regs = reglagesActifs_(p.salle), last = regs.length ? regVal_(regs[regs.length - 1]) : null;
+  var depart = last || attendu_(cible_(r, s1 ? s1.label : 'Veg 1', plan), cal);
+  var maxT = num_(p.maxT) || 1, maxHR = num_(p.maxHR) || 3;
+  var ancien = changements_(r, plan).filter(function (e) { return !e.sansChangement; });
+  var nouveau = changements_(r2, plan).filter(function (e) { return !e.sansChangement; });
+  var etapes = rattrapage_(r2, plan, cal, today, depart, maxT, maxHR);
+  var out = { salle: p.salle, onglet: r.onglet, ancienFlo: r.flo, flo: flo, ancienneRecolte: r.recolte, recolte: r2.recolte,
+    semaineAvant: s1 && s1.label, semaineApres: s2 && s2.label, depart: depart, departSource: last ? 'dernier réglage inscrit' : 'consigne attendue avant le changement',
+    ancien: ancien, nouveau: nouveau, etapes: etapes, maxT: maxT, maxHR: maxHR };
+  if (!appliquer) return out;
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var ctx = ctxRound_(p.salle, r.onglet);
+    var figes = figerPasses_(ctx);
+    ctx.sh.getRange('B3').setValue(flo);
+    var txt = 'FLO ' + r.flo + '→' + flo + ' j (récolte ' + r.recolte + ' → ' + r2.recolte + ') ; descente ajustée, ' + etapes.length + ' étape(s) de réglage (app Climat)' + (p.motif ? ' — ' + p.motif : '');
+    ajouterObservation_(ctx, today, txt);
+    var sh = tab_('Plans', ['ID', 'Horodatage', 'Salle', 'Round', 'Ancien FLO', 'Nouveau FLO', 'Récolte', 'Étapes (JSON)', 'Statut', 'Motif']);
+    var id = id_();
+    sh.appendRow([id, maintenant_(), p.salle, r.round, r.flo, flo, r2.recolte, JSON.stringify(etapes), 'actif', p.motif || '']);
+    journal_('descente', p.salle, id, txt + (figes ? ' · ' + figes + ' consigne(s) passée(s) figée(s)' : ''));
+    var c = CacheService.getScriptCache(); c.remove('reg:' + p.salle); c.remove('tachesClimat');
+    out.applique = true; out.id = id;
+    return out;
+  } finally { lock.releaseLock(); }
+}
+
+/** Plan de rattrapage actif d'une salle (dernier plan « actif » du round en cours). */
+function planActif_(salle, round) {
+  var s = ss_().getSheetByName('Plans');
+  if (!s || s.getLastRow() < 2) return null;
+  var v = s.getRange(2, 1, s.getLastRow() - 1, 10).getValues();
+  for (var i = v.length - 1; i >= 0; i--) {
+    if (v[i][2] === salle && String(v[i][3]) === String(round) && v[i][8] === 'actif') {
+      var et = []; try { et = JSON.parse(v[i][7]); } catch (e) {}
+      if (!et.length || et[et.length - 1].date < plusJours_(aujourdhui_(), -3)) return null;
+      return { id: v[i][0], le: v[i][1] instanceof Date ? Utilities.formatDate(v[i][1], CFG.TZ, 'yyyy-MM-dd HH:mm') : String(v[i][1]), ancienFlo: v[i][4], flo: v[i][5], etapes: et };
+    }
+  }
+  return null;
+}
+
+/** Historique d'une salle : réglages, modifications de cibles, descentes. */
+function historique_(salle) {
+  var out = [];
+  reglagesActifs_(salle).slice(-80).forEach(function (x) { out.push({ type: 'réglage', quand: x['Date effective'] + ' ' + (x['Heure'] || ''), semaine: x['Semaine'], val: regVal_(x), conf: x['Conformité du réglage'], ecarts: x['Écarts'], note: x['Note'], id: x['ID'] }); });
+  var mc = ss_().getSheetByName('Modifs cibles');
+  if (mc && mc.getLastRow() > 1) mc.getRange(2, 1, mc.getLastRow() - 1, 9).getValues().forEach(function (r) {
+    if (r[2] !== salle) return;
+    out.push({ type: 'cible', quand: r[1] instanceof Date ? Utilities.formatDate(r[1], CFG.TZ, 'yyyy-MM-dd HH:mm') : String(r[1]), semaine: r[4], champ: r[5], de: r[6], a: r[7], motif: r[8] });
+  });
+  var pl = ss_().getSheetByName('Plans');
+  if (pl && pl.getLastRow() > 1) pl.getRange(2, 1, pl.getLastRow() - 1, 10).getValues().forEach(function (r) {
+    if (r[2] !== salle) return;
+    out.push({ type: 'descente', quand: r[1] instanceof Date ? Utilities.formatDate(r[1], CFG.TZ, 'yyyy-MM-dd HH:mm') : String(r[1]), de: r[4], a: r[5], recolte: r[6] instanceof Date ? Utilities.formatDate(r[6], CFG.TZ, 'yyyy-MM-dd') : String(r[6]), motif: r[9] });
+  });
+  out.sort(function (a, b) { return a.quand < b.quand ? 1 : -1; });
+  return { items: out.slice(0, 120) };
+}
+
+/** Tableau des 12 semaines d'un round avec dates et source. */
+function semainesRound_(r, plan, cal, today) {
+  var ch = changements_(r, plan), out = [];
+  SEMAINES.forEach(function (s) {
+    var e = ch.filter(function (x) { return x.semaine === s; })[0];
+    var c = cible_(r, s, plan);
+    var idx = ch.indexOf(e), fin = e ? (ch[idx + 1] ? plusJours_(ch[idx + 1].date, -1) : r.fin) : null;
+    out.push({ semaine: s, debut: e ? e.date : null, conseillee: e ? e.conseillee : null, fin: fin, absente: !e,
+      courante: !!(e && e.date <= today && fin >= today), cible: { tj: c.tj, hrj: c.hrj, tn: c.tn, hrn: c.hrn, co2: c.co2, rampe: c.rampe, vpd: c.vpd, vpdMin: c.vpdMin, vpdMax: c.vpdMax, hrnMax: c.hrnMax, dif: c.dif },
+      attendu: attendu_(c, cal), divergences: c.divergences, source: c.source });
+  });
+  return out;
 }
