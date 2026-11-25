@@ -43,7 +43,8 @@ h1{font-size:1.6rem} h2{font-size:1.25rem} h3{font-size:1.05rem}
 .label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
 .muted{color:var(--muted)}
 button,input,select,textarea{font:inherit;color:inherit}
-button{cursor:pointer}
+button{cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+html{touch-action:manipulation}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
 header.top .who{font-size:.85rem;color:var(--muted);text-align:right;line-height:1.25}
@@ -257,6 +258,13 @@ async function charger(force) {
   if (!S.salle || !r.salles.find(x => x.salle === S.salle)) { const a = r.salles.find(s => s.rappel); S.salle = (a || r.salles[1] || r.salles[0]).salle; }
   S.draft = null;
   rendre();
+  prechargerDetails();
+}
+let prechargement = false;
+async function prechargerDetails() {
+  if (prechargement) return; prechargement = true;
+  try { for (const s of S.acc.salles) { if (!S.det[s.salle]) { try { S.det[s.salle] = await api('salle', { salle: s.salle }, true); } catch (e) { break; } } } }
+  finally { prechargement = false; }
 }
 $('maj').onclick = () => charger(true).then(() => toast('Registres relus.')).catch(e => toast(e.message));
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { S.tab = b.dataset.t; rendre(); });
@@ -334,15 +342,7 @@ function vueReglage() {
   if (!s.cible) { $('vue').innerHTML = h + '<div class="panel"><div class="empty">Aucune cible aujourd\'hui pour cette salle.</div></div>'; return; }
   const viaPlan = s.plan && s.attendu && ORDRE.some(k => prop[k] !== s.attendu[k]);
   h += `<div class="panel"><div class="sit"><span class="label">Réglage du panneau</span><span class="label">${viaPlan ? 'proposé : plan de rattrapage' : 'proposé : cible, T jour ' + f1(S.acc.offsets.jour) + ' °C'}</span></div><div class="gauges">`;
-  ORDRE.forEach(k => {
-    const c = CH[k], v = S.draft[k], p = prop[k], diff = v != null && p != null && Math.abs(v - p) > c.tol;
-    const m = mes ? mes[k] : null;
-    h += `<div class="g ${diff ? 'diff' : ''}"><div class="gl"><span class="label">${c.nom}</span>${diff ? '<span class="label" style="color:var(--warn)">écart</span>' : ''}</div>
-      ${cadran(k, v, cib[k], p, m)}
-      <div class="val">${f1(v)}<small>${c.u}</small></div>
-      <div class="sub"><span class="t">cible ${f1(cib[k])}</span>${p !== cib[k] ? ' · panneau ' + f1(p) : ''}${m != null ? '<br><span class="m">mesuré ' + f1(m) + '</span>' : ''}</div>
-      <div class="step"><button data-k="${k}" data-d="-1" aria-label="Diminuer ${c.nom}">−</button><button data-k="${k}" data-d="1" aria-label="Augmenter ${c.nom}">+</button></div></div>`;
-  });
+  ORDRE.forEach(k => { h += `<div class="g" id="g_${k}">${carte(s, k)}</div>`; });
   h += `</div>
     <div class="btns"><button class="btn small" id="b_cible">Appliquer la cible</button><button class="btn small" id="b_prec" ${last ? '' : 'disabled'}>Reprendre le dernier réglage</button></div>
     <div id="verif"></div>
@@ -355,12 +355,41 @@ function vueReglage() {
     <div class="muted" style="font-size:.82rem">${last ? 'Dernier réglage : ' + fD(s.dernierReglage.date) + ' ' + esc(s.dernierReglage.heure || '') + ' — T ' + f1(last.tj) + '/' + f1(last.tn) + ' °C · HR ' + f1(last.hrj) + '/' + f1(last.hrn) + ' % · CO₂ ' + f1(last.co2) : 'Aucun réglage inscrit pour cette salle.'}${s.derniereMesure ? '<br>Mesure Inkbird au registre : ' + fD(s.derniereMesure.date) : ''}</div>
   </div>`;
   $('vue').innerHTML = h;
-  $('vue').querySelectorAll('.step button').forEach(b => b.onclick = () => { const k = b.dataset.k; S.draft[k] = r1((S.draft[k] != null ? S.draft[k] : (prop[k] || 0)) + CH[k].pas * +b.dataset.d); vueReglage(); });
-  $('b_cible').onclick = () => { S.draft = Object.assign({}, prop); vueReglage(); };
-  $('b_prec').onclick = () => { if (last) { S.draft = Object.assign({}, last); vueReglage(); } };
+  ORDRE.forEach(k => majCarte(s, k));
+  $('b_cible').onclick = () => { S.draft = Object.assign({}, prop); ORDRE.forEach(k => majCarte(s, k)); verifier(s); };
+  $('b_prec').onclick = () => { if (last) { S.draft = Object.assign({}, last); ORDRE.forEach(k => majCarte(s, k)); verifier(s); } };
   verifier(s);
   $('b_ok').onclick = () => enregistrer(s);
 }
+function carte(s, k) {
+  const c = CH[k], prop = s.propose || {}, cib = s.cible || {}, mes = s.derniereMesure ? s.derniereMesure.m : null;
+  const v = S.draft[k], p = prop[k], m = mes ? mes[k] : null, diff = v != null && p != null && Math.abs(v - p) > c.tol;
+  return `<div class="gl"><span class="label">${c.nom}</span><span class="label" style="color:var(--warn)">${diff ? 'écart' : ''}</span></div>
+    ${cadran(k, v, cib[k], p, m)}
+    <div class="val">${f1(v)}<small>${c.u}</small></div>
+    <div class="sub"><span class="t">cible ${f1(cib[k])}</span>${p !== cib[k] ? ' · panneau ' + f1(p) : ''}${m != null ? '<br><span class="m">mesuré ' + f1(m) + '</span>' : ''}</div>
+    <div class="step"><button data-k="${k}" data-d="-1" aria-label="Diminuer ${c.nom}">−</button><button data-k="${k}" data-d="1" aria-label="Augmenter ${c.nom}">+</button></div>`;
+}
+function majCarte(s, k) {
+  const el = $('g_' + k); if (!el) return;
+  const prop = s.propose || {}, v = S.draft[k], p = prop[k];
+  el.classList.toggle('diff', v != null && p != null && Math.abs(v - p) > CH[k].tol);
+  el.innerHTML = carte(s, k);
+}
+/* Un seul écouteur pour tous les +/− : seule la carte touchée est redessinée (pas de saut d'écran). */
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('.step button[data-k]');
+  if (b && S.tab === 'reglage') {
+    const s = res(), k = b.dataset.k, prop = (s && s.propose) || {};
+    S.draft[k] = r1((S.draft[k] != null ? S.draft[k] : (prop[k] || 0)) + CH[k].pas * +b.dataset.d);
+    majCarte(s, k); verifier(s); return;
+  }
+  const e = ev.target.closest('.ed .pm button[data-k]');
+  if (e && S.tab === 'cibles' && S.ed) {
+    const k = e.dataset.k; S.ed[k] = r1((S.ed[k] || 0) + CH[k].pas * +e.dataset.d);
+    majEditeur();
+  }
+});
 function verifier(s) {
   const d = S.draft, prop = s.propose || {}, e = [];
   ORDRE.forEach(k => { if (d[k] != null && prop[k] != null && Math.abs(d[k] - prop[k]) > CH[k].tol) e.push(CH[k].nom + ' ' + f1(d[k]) + ' (proposé ' + f1(prop[k]) + ')'); });
@@ -377,7 +406,7 @@ async function enregistrer(s) {
     const r = await api('reglage', p);
     const reg = r.registre && r.registre.ok ? 'inscrit au registre (' + r.registre.onglet + ')' : 'gardé dans l\'app' + (r.registre && r.registre.motif ? ' — ' + r.registre.motif : '');
     toast((r.conformite.ok === false ? 'Enregistré avec écart · ' : 'Réglage ') + reg + (r.tache && r.tache.titre ? ' · calendrier coché' : ''));
-    S.det[s.salle] = null; await charger();
+    S.det[s.salle] = null; charger().catch(() => {});
   } catch (e) {
     if (e.serveur) { toast(e.message); $('b_ok').disabled = false; return; }
     enFile('reglage', p); toast('Pas de réseau : réglage gardé, envoi automatique au retour du réseau.'); $('b_ok').disabled = false;
@@ -412,20 +441,13 @@ function editeur(w, L) {
   const c = w.cible;
   if (!S.ed) S.ed = { tj: c.tj, hrj: c.hrj, tn: c.tn, hrn: c.hrn, co2: c.co2, rampe: c.rampe };
   const e = S.ed;
-  const vpd = e.tj != null && e.hrj != null ? vpdF(e.tj, e.hrj, 1.5) : null;
-  const alertes = [];
-  if (vpd != null && c.vpdMin != null && (vpd < c.vpdMin - 0.005 || vpd > c.vpdMax + 0.005)) alertes.push('VPD jour ' + f2(vpd) + ' kPa hors de la bande ' + f2(c.vpdMin) + '–' + f2(c.vpdMax));
-  if (e.hrn != null && c.hrnMax != null && e.hrn > c.hrnMax) alertes.push('HR nuit ' + f1(e.hrn) + ' % au-dessus du plafond ' + f1(c.hrnMax) + ' %');
-  if (e.tn != null && e.tj != null && e.tn > e.tj) alertes.push('nuit plus chaude que le jour');
   const idx = L.indexOf(w), suiv = L.slice(idx + 1).filter(x => !x.absente).map(x => x.semaine);
   let h = `<div class="panel" id="ed"><div class="sit"><h2>${esc(w.semaine)}</h2><span class="muted">${w.conseillee ? fD(w.conseillee) + (w.fin ? ' → ' + fC(w.fin) : '') : ''}</span></div><div class="ed">`;
   ORDRE.forEach(k => {
-    const chg = e[k] !== c[k];
-    h += `<div class="e ${chg ? 'chg' : ''}"><span class="label">${CH[k].nom}</span><b>${f1(e[k])}</b><span class="was">${chg ? 'était ' + f1(c[k]) : CH[k].u}</span>
+    h += `<div class="e" id="e_${k}"><span class="label">${CH[k].nom}</span><b></b><span class="was"></span>
       <div class="pm"><button data-k="${k}" data-d="-1" aria-label="Diminuer">−</button><button data-k="${k}" data-d="1" aria-label="Augmenter">+</button></div></div>`;
   });
-  h += `</div><div class="muted" style="font-size:.82rem">VPD feuille jour prévu : <b>${f2(vpd)}</b> kPa · DIF ${f1(e.tj - e.tn)} °C · au thermostat : jour ${f1(e.tj + S.acc.offsets.jour)} °C, nuit ${f1(e.tn + S.acc.offsets.nuit)} °C</div>
-    ${alertes.length ? `<div class="banner warn">${esc(alertes.join(' · '))}</div>` : ''}
+  h += `</div><div id="ed_sum"></div>
     <div class="field"><span class="label">Appliquer à</span><div class="seg">
       <button data-p="une" aria-pressed="${S.portee === 'une'}">${esc(w.semaine)} seulement</button>
       <button data-p="suite" aria-pressed="${S.portee === 'suite'}" ${suiv.length ? '' : 'disabled'}>${esc(w.semaine)} et suivantes</button></div>
@@ -434,9 +456,21 @@ function editeur(w, L) {
     <div class="btns"><button class="btn" id="c_annul">Annuler</button><button class="btn primary" id="c_ok" style="flex:2">Écrire dans le registre</button></div></div>`;
   return h;
 }
+function majEditeur() {
+  const d = S.det[S.salle]; if (!d || !S.ed) return;
+  const w = (d.semaines || []).find(x => x.semaine === S.sel); if (!w) return;
+  const c = w.cible, e = S.ed;
+  ORDRE.forEach(k => { const el = $('e_' + k); if (!el) return; const chg = e[k] !== c[k];
+    el.classList.toggle('chg', chg); el.querySelector('b').textContent = f1(e[k]); el.querySelector('.was').textContent = chg ? 'était ' + f1(c[k]) : CH[k].u; });
+  const vpd = e.tj != null && e.hrj != null ? vpdF(e.tj, e.hrj, 1.5) : null, al = [];
+  if (vpd != null && c.vpdMin != null && (vpd < c.vpdMin - 0.005 || vpd > c.vpdMax + 0.005)) al.push('VPD jour ' + f2(vpd) + ' kPa hors de la bande ' + f2(c.vpdMin) + '–' + f2(c.vpdMax));
+  if (e.hrn != null && c.hrnMax != null && e.hrn > c.hrnMax) al.push('HR nuit ' + f1(e.hrn) + ' % au-dessus du plafond ' + f1(c.hrnMax) + ' %');
+  if (e.tn != null && e.tj != null && e.tn > e.tj) al.push('nuit plus chaude que le jour');
+  const sum = $('ed_sum'); if (sum) sum.innerHTML = `<div class="muted" style="font-size:.82rem">VPD feuille jour prévu : <b>${f2(vpd)}</b> kPa · DIF ${f1(e.tj - e.tn)} °C · au thermostat : jour ${f1(e.tj + S.acc.offsets.jour)} °C, nuit ${f1(e.tn + S.acc.offsets.nuit)} °C</div>${al.length ? `<div class="banner warn" style="margin-top:8px">${esc(al.join(' · '))}</div>` : ''}`;
+}
 function brancherEditeur(L) {
+  majEditeur();
   const w = L.find(x => x.semaine === S.sel); if (!w) return;
-  $('vue').querySelectorAll('.ed .pm button').forEach(b => b.onclick = () => { const k = b.dataset.k; S.ed[k] = r1((S.ed[k] || 0) + CH[k].pas * +b.dataset.d); vueCibles(); });
   $('vue').querySelectorAll('[data-p]').forEach(b => b.onclick = () => { S.portee = b.dataset.p; vueCibles(); });
   $('c_annul').onclick = () => { S.sel = null; S.ed = null; vueCibles(); };
   $('c_ok').onclick = async () => {
